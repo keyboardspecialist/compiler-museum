@@ -10,8 +10,9 @@ async function bwFactory() {
 	return factory;
 }
 
-// source -> { wat, diagnostics }
-export async function compileBW(source) {
+// source -> { wat, diagnostics }. `files` (optional) are the other workspace
+// files, written to MEMFS so `%filename` inclusion can resolve them.
+export async function compileBW(source, files) {
 	const make = await bwFactory();
 	const out = [], err = [];
 	const M = await make({
@@ -20,6 +21,9 @@ export async function compileBW(source) {
 		noInitialRun: true,
 	});
 	M.FS.writeFile("/in.b", source);
+	if (Array.isArray(files))
+		for (const f of files)
+			try { M.FS.writeFile("/" + f.name, f.content); } catch (e) { /* skip */ }
 	try {
 		M.callMain(["/in.b"]);
 	} catch (e) {
@@ -71,6 +75,28 @@ export class BWRuntime {
 					m[a++] = ch;
 				}
 				m[a] = 0; return s;
+			},
+			// printf(fmt, argbuf, argc): the compiler marshals the variadic args
+			// into the word-indexed buffer argbuf; walk the format pulling them.
+			printf: (fmt, argbuf, argc) => {
+				const rdword = (wi) => { const mm = mem(); const a = (wi >>> 0) * 4; return mm[a] | (mm[a + 1] << 8) | (mm[a + 2] << 16) | (mm[a + 3] << 24); };
+				const rdstr = (wi) => { const mm = mem(); let a = (wi >>> 0) * 4, s = ""; while (mm[a]) s += String.fromCharCode(mm[a++]); return s; };
+				const mm = mem();
+				let a = byte(fmt), out = "", ai = 0;
+				const nextarg = () => rdword((argbuf >>> 0) + ai++);
+				while (mm[a] !== 0) {
+					const c = mm[a++];
+					if (c === 37 /* % */) {
+						const f = mm[a++];
+						if (f === 100 /* d */) out += String(nextarg() | 0);
+						else if (f === 99 /* c */) out += String.fromCharCode(nextarg() & 0xff);
+						else if (f === 111 /* o */) out += (nextarg() >>> 0).toString(8);
+						else if (f === 115 /* s */) out += rdstr(nextarg());
+						else if (f === 37) out += "%";
+						else out += "%" + String.fromCharCode(f);
+					} else out += String.fromCharCode(c);
+				}
+				this.writeOut(out); return 0;
 			},
 			exit: (code) => { throw { __exit: code | 0 }; },
 		};
@@ -180,6 +206,34 @@ main() {
 			lchar(buf, i, c - 32);
 	putstr(buf);
 	putchar('*n');
+	return(0);
+}`,
+	},
+	{
+		name: "printf",
+		source: `/* printf: %d %c %s %o. The compiler marshals the variadic args into a
+   buffer and the host walks the format string. */
+main() {
+	extrn printf;
+	auto i;
+	for (i = 1; i <= 5; i += 1)
+		printf("%d squared is %d*n", i, i * i);
+	return(0);
+}`,
+	},
+	{
+		name: "manifest",
+		source: `/* manifest constants: compile-time textual macros (name = text;),
+   substituted before parsing. SIZE sets the vector size; SQ nests it. */
+SIZE = 5;
+SQ = SIZE * SIZE;
+main() {
+	extrn printf;
+	auto v SIZE, i, s;
+	for (i = 0; i < SIZE; i += 1) v[i] = i + 1;
+	s = 0;
+	for (i = 0; i < SIZE; i += 1) s += v[i];
+	printf("sum 1..%d = %d (SQ=%d)*n", SIZE, s, SQ);
 	return(0);
 }`,
 	},

@@ -115,6 +115,16 @@ try {
 	await clearAndRun();
 	await waitOut("HELLO, WATERLOO");
 	ok(true, "Waterloo string library: getstr/char/lchar -> HELLO, WATERLOO");
+	await addCExample("printf");
+	await starFile("printf.b78");
+	await clearAndRun();
+	await waitOut("5 squared is 25");
+	ok(true, "Waterloo printf (varargs marshalling) -> 5 squared is 25");
+	await addCExample("manifest");
+	await starFile("manifest.b78");
+	await clearAndRun();
+	await waitOut("sum 1..5 = 15 (SQ=25)");
+	ok(true, "Waterloo manifest constants -> sum 1..5 = 15 (SQ=25)");
 } catch (e) { ok(false, "Waterloo B: " + e.message + " | out=" + JSON.stringify(await outText())); }
 
 // 4. Switch entry back to BCPL; debug returns; main.b intact
