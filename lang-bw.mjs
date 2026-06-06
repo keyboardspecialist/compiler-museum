@@ -113,6 +113,18 @@ export class BWRuntime {
 }
 export function makeBWRuntime(writeOut, input) { return new BWRuntime(writeOut, input); }
 
+// Library reference shown in the API tab when Waterloo B is active. These are
+// provided by BWRuntime as memory-aware host imports.
+export const BW_API = [
+	{ name: "getchar", sig: "getchar()", desc: "Read one byte from stdin; returns 0 at end of input." },
+	{ name: "putchar", sig: "putchar(c)", desc: "Write the low byte of c to output; returns c." },
+	{ name: "char", sig: "char(s, i)", desc: "Return the i-th character of the string at word-pointer s." },
+	{ name: "lchar", sig: "lchar(s, i, c)", desc: "Store character c as the i-th character of s; returns c." },
+	{ name: "putstr", sig: "putstr(s)", desc: "Write the NUL-terminated string at s to output." },
+	{ name: "getstr", sig: "getstr(s)", desc: "Read one input line into the buffer at s (NUL-terminated); returns s." },
+	{ name: "printf", sig: "printf(fmt, ...)", desc: "Formatted output: %d decimal, %c char, %s string, %o octal." },
+];
+
 // Waterloo B examples. The dialect adds for/repeat/next, modern += assignment,
 // && / ||, switch with range cases + default, f32 #-operators, and (below) the
 // string library.

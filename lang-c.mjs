@@ -158,6 +158,13 @@ main() {
 	},
 ];
 
+// Library reference shown in the API tab when C is the active language. The C
+// programs call getchar/putchar as host imports (wired by CRuntime).
+export const C_API = [
+	{ name: "getchar", sig: "getchar()", desc: "Read one byte from stdin; returns 0 at end of input." },
+	{ name: "putchar", sig: "putchar(c)", desc: "Write the low byte of c to output; returns c." },
+];
+
 export function cExamplesFor(dialect) {
 	return C_EXAMPLES.filter((e) => !e.dialect || e.dialect === dialect);
 }
