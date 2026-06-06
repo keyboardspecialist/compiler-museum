@@ -1376,7 +1376,7 @@
     // Museum: C language support (the two 1972 C compilers, built to wasm).
     import { compileC, makeCRuntime, C_EXAMPLES } from "./lang-c.mjs";
     import { compileB, B_EXAMPLES } from "./lang-b.mjs";
-    import { compileBW, BW_EXAMPLES } from "./lang-bw.mjs";
+    import { compileBW, makeBWRuntime, BW_EXAMPLES } from "./lang-bw.mjs";
     const V = Date.now();
     // Build tag in header — derived from the page's last-modified
     // header (server-side mtime). If the browser served a cached
@@ -1484,6 +1484,7 @@
     }
     const entryIsC = () => { const e = entryFile(); return !!e && langOf(e.name) === "c"; };
     const entryIsB = () => { const e = entryFile(); return !!e && langOf(e.name) === "b"; };
+    const entryIsBW = () => { const e = entryFile(); return !!e && langOf(e.name) === "bw"; };
     // C and B are the greenfield, non-BCPL languages (own runtime, no debugger).
     const entryIsNative = () => { const e = entryFile(); return !!e && langOf(e.name) !== "bcpl"; };
     const cDialect = () => document.getElementById("cDialect").value || "1120";
@@ -2960,7 +2961,9 @@ LET start() = VALOF
     }
 
     async function doRunC(built) {
-      const rt = makeCRuntime((s) => { outputEl.textContent += s; }, stdinEl.value);
+      // Waterloo B gets its string-library runtime; C and B(1972) share CRuntime.
+      const mk = entryIsBW() ? makeBWRuntime : makeCRuntime;
+      const rt = mk((s) => { outputEl.textContent += s; }, stdinEl.value);
       currentRt = rt; lastMemRt = rt;
       stopBtn.disabled = false;
       try {
