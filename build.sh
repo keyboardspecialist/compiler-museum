@@ -28,7 +28,7 @@ rsync -a --delete \
 	"$BCPL"/ "$out"/
 
 echo "overlaying museum shell"
-cp "$here/src/index.html" "$here/src/lang-c.mjs" "$here/src/lang-b.mjs" "$out"/
+cp "$here/src/index.html" "$here/src/lang-c.mjs" "$here/src/lang-b.mjs" "$here/src/lang-bw.mjs" "$out"/
 
 echo "overlaying museum-owned vendor (wabt, binaryen)"
 mkdir -p "$out/vendor"

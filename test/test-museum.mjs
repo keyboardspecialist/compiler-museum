@@ -70,25 +70,42 @@ try {
 	ok(true, "bsem.c [prestruct] -> Lvalue required");
 } catch (e) { ok(false, "bsem.c: " + e.message + " | out=" + JSON.stringify(await outText())); }
 
-// 3b. B (.b72): add hello, star, run -> "Hi!"; indicator shows B; switch falls
-//     through (no break) -> "3 2 1". addCExample('name').last() picks the B row
-//     (the B section is appended after the C one).
+// 3b. B 1972 (.b72): use b72-unique example names ("fact", "switch") since
+//     addCExample('name').last() picks the LAST matching row, and "hello" also
+//     exists in the Waterloo section appended below.
 try {
-	await addCExample("hello");
-	await starFile("hello.b72");
+	await addCExample("fact");
+	await starFile("fact.b72");
 	const lang = await page.evaluate(() => document.getElementById("lmLang").textContent);
 	const dbgHidden = !(await page.locator("#dbgMode").isVisible());
 	const dialectHidden = !(await page.locator("#cDialect").isVisible());
 	ok(lang === "B" && dbgHidden && dialectHidden, ".b72 entry: B indicator, debug + dialect hidden");
 	await clearAndRun();
-	await waitOut("Hi!");
-	ok(true, "B hello.b72 -> Hi!");
+	await waitOut("120");
+	ok(true, "B 1972 fact.b72 -> 120");
 	await addCExample("switch");
 	await starFile("switch.b72");
 	await clearAndRun();
 	await waitOut("3 2 1");
-	ok(true, "B switch fallthrough (no break) -> 3 2 1");
-} catch (e) { ok(false, "B: " + e.message + " | out=" + JSON.stringify(await outText())); }
+	ok(true, "B 1972 switch fallthrough (no break) -> 3 2 1");
+} catch (e) { ok(false, "B 1972: " + e.message + " | out=" + JSON.stringify(await outText())); }
+
+// 3c. Waterloo B 1978 (.b78): range-case switch + f32 #-floats.
+try {
+	await addCExample("grade");
+	await starFile("grade.b78");
+	const attrib = await page.evaluate(() => document.getElementById("lmAttrib").textContent);
+	const lang = await page.evaluate(() => document.getElementById("lmLang").textContent);
+	ok(lang === "B" && /Waterloo/.test(attrib), ".b78 entry: B / Waterloo indicator");
+	await clearAndRun();
+	await waitOut("F D C B A A");
+	ok(true, "Waterloo switch range cases -> F D C B A A");
+	await addCExample("float");
+	await starFile("float.b78");
+	await clearAndRun();
+	await waitOut("YY");
+	ok(true, "Waterloo f32 #-operators -> YY");
+} catch (e) { ok(false, "Waterloo B: " + e.message + " | out=" + JSON.stringify(await outText())); }
 
 // 4. Switch entry back to BCPL; debug returns; main.b intact
 try {

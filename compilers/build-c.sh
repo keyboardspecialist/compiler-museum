@@ -25,11 +25,17 @@ build() {
 build c89       cfront-prestruct
 build c89-1120  cfront-1120
 
-# B (b72) -- different source file names (b00-b03), same backend trio.
+# B compilers (b00-b03 source names, own backend copies).
 echo "emcc b72 -> cfront-b"
 emcc -std=c89 -O2 $WARN \
 	"$src/b72/b00.c" "$src/b72/b01.c" "$src/b72/b02.c" "$src/b72/b03.c" \
 	"$src/b72/tables.c" "$src/b72/runtime.c" "$src/b72/wat.c" \
 	$EMFLAGS -o "$out/cfront-b.mjs"
 
-echo "done -> $out/cfront-{prestruct,1120,b}.{mjs,wasm}"
+echo "emcc b-waterloo -> cfront-bw"
+emcc -std=c89 -O2 $WARN \
+	"$src/b-waterloo/b00.c" "$src/b-waterloo/b01.c" "$src/b-waterloo/b02.c" "$src/b-waterloo/b03.c" \
+	"$src/b-waterloo/tables.c" "$src/b-waterloo/runtime.c" "$src/b-waterloo/wat.c" \
+	$EMFLAGS -o "$out/cfront-bw.mjs"
+
+echo "done -> $out/cfront-{prestruct,1120,b,bw}.{mjs,wasm}"

@@ -11,6 +11,8 @@ modifies neither.
   `prestruct` compilers, modernized to C89 with a WebAssembly backend.
 - **1972 B** (`../proto-c/b72`) — Ken Thompson's B, the typeless ancestor of C,
   on the same WAT backend (`.b72` files; `.b` is BCPL).
+- **Waterloo B / 1978** (`../proto-c/b-waterloo`) — the richer Honeywell-era B
+  (for/repeat, `+=`, `&&`/`||`, switch ranges, f32 `#`-floats; `.b78` files).
 - (future languages drop in the same way.)
 
 ## Build & run
@@ -32,8 +34,9 @@ Tracked (museum-owned):
 ```
 src/index.html      forked BCPL IDE shell + the C and B integration
 src/lang-c.mjs      C language module: compile (cfront-wasm -> WAT), CRuntime, examples
-src/lang-b.mjs      B language module: compile (cfront-b -> WAT), examples (reuses CRuntime)
-compilers/build-c.sh emcc proto-c -> site/compilers/cfront-{prestruct,1120,b}.{wasm,mjs}
+src/lang-b.mjs      B (1972) module: compile (cfront-b -> WAT), examples (reuses CRuntime)
+src/lang-bw.mjs     Waterloo B (1978) module: compile (cfront-bw -> WAT), examples
+compilers/build-c.sh emcc proto-c -> site/compilers/cfront-{prestruct,1120,b,bw}.{wasm,mjs}
 vendor/wabt.js      self-contained UMD WAT->wasm assembler (window.WabtModule)
 vendor/binaryen.mjs self-contained ESM (v129) for the asyncify pass
 build.sh            assembles site/ from the upstreams
@@ -57,8 +60,8 @@ Enable once in repo Settings -> Pages -> Branch `gh-pages` / root.
 ## How a language is chosen
 
 By the **entry file's extension**: `.c` -> the C compiler (dialect picked by the
-`C dialect` control), `.b72` -> the B compiler, anything else -> BCPL (`.b` is
-BCPL, so B takes `.b72`). `.b`, `.c`, and `.b72` files coexist in the files pane;
+`C dialect` control), `.b72` -> B (1972), `.b78` -> Waterloo B (1978), anything
+else -> BCPL (`.b` is BCPL). `.b`, `.c`, `.b72`, and `.b78` files coexist in the pane;
 the centered header indicator names the active language, and the BCPL debugger
 gates off for the greenfield languages (C, B) — their own debugging can come
 later. Adding a compiler is a `lang-<x>.mjs` plus a small shell hook.
