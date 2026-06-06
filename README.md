@@ -10,7 +10,7 @@ modifies neither.
 - **1972 C compilers** (`../proto-c`) — Dennis Ritchie's `last1120` and
   `prestruct` compilers, modernized to C89 with a WebAssembly backend.
 - **1972 B** (`../proto-c/b72`) — Ken Thompson's B, the typeless ancestor of C,
-  on the same WAT backend (`.bth` files; `.b` is BCPL).
+  on the same WAT backend (`.b72` files; `.b` is BCPL).
 - (future languages drop in the same way.)
 
 ## Build & run
@@ -57,8 +57,8 @@ Enable once in repo Settings -> Pages -> Branch `gh-pages` / root.
 ## How a language is chosen
 
 By the **entry file's extension**: `.c` -> the C compiler (dialect picked by the
-`C dialect` control), `.bth` -> the B compiler, anything else -> BCPL (`.b` is
-BCPL, so B takes `.bth`). `.b`, `.c`, and `.bth` files coexist in the files pane;
+`C dialect` control), `.b72` -> the B compiler, anything else -> BCPL (`.b` is
+BCPL, so B takes `.b72`). `.b`, `.c`, and `.b72` files coexist in the files pane;
 the centered header indicator names the active language, and the BCPL debugger
 gates off for the greenfield languages (C, B) — their own debugging can come
 later. Adding a compiler is a `lang-<x>.mjs` plus a small shell hook.

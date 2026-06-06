@@ -1471,10 +1471,10 @@
     const langOf = (name) =>
       !name ? "bcpl"
         : name.endsWith(".c")   ? "c"
-        : name.endsWith(".bth") ? "b"      // B (1972); .b is BCPL, so B uses .bth
+        : name.endsWith(".b72") ? "b"      // B (1972); .b is BCPL, so B uses .b72
         : "bcpl";
     const isCompilable = (name) =>
-      name.endsWith(".b") || name.endsWith(".c") || name.endsWith(".bth");
+      name.endsWith(".b") || name.endsWith(".c") || name.endsWith(".b72");
     function entryFile() {
       const src = files.filter((f) => isCompilable(f.name));
       return src.find((f) => f.entry) || src[0] || null;
@@ -2393,7 +2393,7 @@ LET start() = VALOF
           nm.textContent = e.name;
           li.appendChild(nm);
           const add = document.createElement("button");
-          add.textContent = "+"; add.title = "add as a .bth file"; add.className = "example-add";
+          add.textContent = "+"; add.title = "add as a .b72 file"; add.className = "example-add";
           add.onclick = (ev) => { ev.stopPropagation(); addBExampleAsFile(e.name); };
           li.appendChild(add);
           exampleListEl.appendChild(li);
@@ -3021,11 +3021,11 @@ LET start() = VALOF
       refreshLangUI();
     }
 
-    // Add a B example program as a real .bth file in the workspace.
+    // Add a B example program as a real .b72 file in the workspace.
     function addBExampleAsFile(exName) {
       const e = B_EXAMPLES.find((x) => x.name === exName);
       if (!e) return;
-      const fname = exName.split(/[ (]/)[0] + ".bth";
+      const fname = exName.split(/[ (]/)[0] + ".b72";
       let idx = files.findIndex((f) => f.name === fname);
       if (idx < 0) {
         files.push({ name: fname, entry: !files.some((f) => f.entry), content: e.source });
