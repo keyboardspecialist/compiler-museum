@@ -223,4 +223,29 @@ main() {
 	return(0);
 }`,
 	},
+	{
+		name: "switch",
+		source: `/* the full Waterloo switch: single value, ranges (lo :: hi), relational
+   bounds (case < c / case > c), fallthrough, and default. kind() tags a byte:
+   S space, D digit, L letter, C control, H high-bit, P punctuation.
+   Dispatch tries equality, then ranges, then bounds, then default. */
+kind(c) {
+	switch c {
+	case ' ':         return('S');
+	case '0' :: '9':  return('D');
+	case 'a' :: 'z':                  /* falls through to ... */
+	case 'A' :: 'Z':  return('L');
+	case < ' ':       return('C');    /* relational bound: below space */
+	case > 126:       return('H');    /* relational bound: above '~'  */
+	default:          return('P');
+	}
+}
+main() {
+	extrn putchar, kind;
+	putchar(kind(' '));  putchar(kind('7'));  putchar(kind('q'));
+	putchar(kind('Z'));  putchar(kind('*n')); putchar(kind('!'));
+	putchar('*n');                   /* prints: SDLLCP */
+	return(0);
+}`,
+	},
 ];
