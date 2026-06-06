@@ -1,4 +1,0 @@
-# build output (regenerate with ./build.sh)
-site/
-node_modules/
-.DS_Store

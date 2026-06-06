@@ -1,40 +1,50 @@
-#!/bin/sh
-# Assemble the museum site/ from its two upstreams:
-#   - the BCPL distribution  ($BCPL): IDE runtime, compiler-in-wasm, examples
-#   - the 1972 C compilers   ($PROTOC): built to wasm with emscripten
-# plus the museum-owned shell (src/index.html, src/lang-c.mjs). The result,
-# site/, is a self-contained static site. Neither upstream is modified.
+#!/usr/bin/env bash
+# Re-compile each example to .wat (via bcplwasm inside cintsys) and
+# assemble to .wasm (via wat2wasm).
 #
-#   ./build.sh            core BCPL + C   (skips the heavy DOOM/textures demos)
-#   ./build.sh --full     also vendor DOOM/ and textures/
-set -e
-here=$(cd "$(dirname "$0")" && pwd)
-BCPL=${BCPL:-$here/../BCPLwasm/cintcode/site}
-PROTOC=${PROTOC:-$here/../proto-c}
-out=$here/site
+# Requires: BCPLROOT, BCPLPATH env set; wat2wasm on PATH.
 
-[ -d "$BCPL" ] || { echo "build.sh: BCPL site not found at $BCPL (set BCPL=)" >&2; exit 1; }
+set -euo pipefail
 
-heavy="--exclude DOOM/ --exclude textures/"
-[ "$1" = "--full" ] && heavy=""
+DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$DIR/.." && pwd)"
+cd "$ROOT"
 
-echo "vendoring BCPL assets from $BCPL"
-mkdir -p "$out"
-rsync -a --delete \
-	--exclude index.html --exclude node_modules --exclude 'package*.json' \
-	--exclude 'test-*.mjs' --exclude '*.wat' --exclude .DS_Store \
-	--exclude lang-c.mjs --exclude compilers/ --exclude site/ \
-	$heavy \
-	"$BCPL"/ "$out"/
+WAT2WASM="${WAT2WASM:-wat2wasm}"
+WASM_OPT="${WASM_OPT:-wasm-opt}"
+ASYNC_IMPORTS="env.bcpl_cowait,env.bcpl_callco,env.bcpl_resumeco,env.bcpl_changeco,env.bcpl_delay"
 
-echo "overlaying museum shell"
-cp "$here/src/index.html" "$here/src/lang-c.mjs" "$out"/
+# Validate master.wat vs libhdr.h + stdlib-manifest.mjs before
+# building examples. Fails fast if any drift.
+node site/test-globals.mjs
+# Scan all g/*.h headers for collisions in the Cintcode stdlib range.
+node site/test-headers.mjs
 
-echo "overlaying museum-owned vendor (wabt, binaryen)"
-mkdir -p "$out/vendor"
-cp "$here"/vendor/* "$out/vendor"/
+# Run wasm-opt --asyncify on a built .wasm if the source is a coroutine
+# example (file name starts with one of the coroutine-track slugs OR
+# the BCPL source contains a call to one of the suspend imports).
+needs_asyncify() {
+  local src="$1"
+  grep -qE '\b(cowait|callco|resumeco|changeco|createco|delay)\b' "$src"
+}
 
-echo "building C compilers from $PROTOC"
-PROTOC="$PROTOC" OUTDIR="$out/compilers" "$here/compilers/build-c.sh"
-
-echo "done -> $out  (serve with: cd site && python3 -m http.server)"
+for src in site/examples/*.b; do
+  base="${src%.b}"
+  name="$(basename "$base")"
+  echo ">> $name"
+  echo "bcplwasm $src to ${base}.wat" | bin/cintsys >/dev/null
+  "$WAT2WASM" "${base}.wat" -o "${base}.wasm"
+  if needs_asyncify "$src" && command -v "$WASM_OPT" >/dev/null 2>&1; then
+    "$WASM_OPT" --asyncify --enable-bulk-memory --enable-reference-types \
+      --pass-arg=asyncify-imports@"$ASYNC_IMPORTS" \
+      "${base}.wasm" -o "${base}.wasm"
+  fi
+  # Post-pass optimizer: binaryen -O2 inlines, peephole-folds, dead-
+  # code-eliminates, sinks loads. Cheap ~10–35% speed win on top of
+  # the playground's straight-line emit. Skip if WASM_OPT missing.
+  if command -v "$WASM_OPT" >/dev/null 2>&1; then
+    "$WASM_OPT" -O2 --enable-bulk-memory --enable-reference-types \
+      "${base}.wasm" -o "${base}.wasm"
+  fi
+done
+echo "built: $(ls site/examples/*.wasm | wc -l) modules"
