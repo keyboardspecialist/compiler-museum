@@ -120,6 +120,9 @@ try {
 	await addExample("manifest", "bw"); await starFile("manifest.b78");
 	await clearAndRun(); await waitOut("sum 1..5 = 15 (SQ=25)");
 	ok(true, "Waterloo manifest constants -> sum 1..5 = 15 (SQ=25)");
+	await addExample("switch", "bw"); await starFile("switch.b78");
+	await clearAndRun(); await waitOut("SDLLCP");
+	ok(true, "Waterloo full switch (single/range/relational/default) -> SDLLCP");
 } catch (e) { ok(false, "Waterloo B: " + e.message + " | out=" + JSON.stringify(await outText())); }
 
 // 3d. Language switcher re-scopes the UI + per-dialect highlighting
