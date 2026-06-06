@@ -1333,6 +1333,8 @@
     </section>
   </div>
 
+  <!-- Museum: vendored wabt (self-contained UMD) -> window.WabtModule. No CDN. -->
+  <script src="./vendor/wabt.js"></script>
   <script type="module">
     // Museum: C language support (the two 1972 C compilers, built to wasm).
     import { compileC, makeCRuntime, C_EXAMPLES } from "./lang-c.mjs";
@@ -2482,19 +2484,20 @@ LET start() = VALOF
     let wabtPromise = null;
     function getWabt() {
       if (!wabtPromise) {
-        wabtPromise = import("https://esm.sh/wabt@1.0.36").then(m => m.default());
+        // Vendored self-contained UMD (./vendor/wabt.js) -> window.WabtModule.
+        wabtPromise = window.WabtModule();
       }
       return wabtPromise;
     }
 
     // Lazy-load binaryen for the in-browser asyncify pass.
-    // jsDelivr's +esm bundles the CommonJS package as ESM without
-    // tripping over Node's require shim (esm.sh's polyfill rejects it).
+    // Vendored raw npm ESM (./vendor/binaryen.mjs, v129): self-contained,
+    // node-only branches are guarded, default export is the ready instance.
     // Pin >=122 so the parser accepts our bulk-memory wasm.
     let binaryenPromise = null;
     function getBinaryen() {
       if (!binaryenPromise) {
-        binaryenPromise = import("https://cdn.jsdelivr.net/npm/binaryen@129/+esm");
+        binaryenPromise = import("./vendor/binaryen.mjs");
       }
       return binaryenPromise;
     }

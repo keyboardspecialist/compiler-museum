@@ -30,6 +30,10 @@ rsync -a --delete \
 echo "overlaying museum shell"
 cp "$here/src/index.html" "$here/src/lang-c.mjs" "$out"/
 
+echo "overlaying museum-owned vendor (wabt, binaryen)"
+mkdir -p "$out/vendor"
+cp "$here"/vendor/* "$out/vendor"/
+
 echo "building C compilers from $PROTOC"
 PROTOC="$PROTOC" OUTDIR="$out/compilers" "$here/compilers/build-c.sh"
 

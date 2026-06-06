@@ -31,10 +31,25 @@ Tracked (museum-owned):
 src/index.html      forked BCPL IDE shell + the C integration
 src/lang-c.mjs      C language module: compile (cfront-wasm -> WAT), CRuntime, examples
 compilers/build-c.sh emcc proto-c -> site/compilers/cfront-{prestruct,1120}.{wasm,mjs}
+vendor/wabt.js      self-contained UMD WAT->wasm assembler (window.WabtModule)
+vendor/binaryen.mjs self-contained ESM (v129) for the asyncify pass
 build.sh            assembles site/ from the upstreams
 test/test-museum.mjs playwright E2E
 ```
-Everything else under `site/` is vendored/built and gitignored.
+`vendor/` is committed so the deployed site is fully self-contained — no CDN.
+`build.sh` overlays it onto `site/vendor/` after rsyncing the BCPL assets.
+Everything else under `site/` is vendored-from-upstream/built and gitignored.
+
+## Deploy (GitHub Pages)
+
+`site/` is a self-contained static site. It ships to the `gh-pages` branch
+(served at `https://keyboardspecialist.github.io/compiler-museum/`):
+
+```
+./build.sh && ./deploy.sh     # build, then sync site/ -> gh-pages branch + push
+```
+
+Enable once in repo Settings -> Pages -> Branch `gh-pages` / root.
 
 ## How a language is chosen
 
