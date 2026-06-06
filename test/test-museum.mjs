@@ -55,9 +55,9 @@ try {
 	ok(inPane === 1, "maxsub.c added to files pane");
 	await starFile("maxsub.c");
 	const dialectShown = await page.locator("#cDialect").isVisible();
-	const dbgHidden = !(await page.locator("#dbgMode").isVisible());
+	const dbgShown = await page.locator("#dbgMode").isVisible();
 	const langC = (await page.locator("#langSelect").inputValue()) === "c";
-	ok(dialectShown && dbgHidden && langC, ".c active: C-dialect shown, debug hidden, langSelect=c");
+	ok(dialectShown && dbgShown && langC, ".c active: C-dialect + debug shown, langSelect=c");
 	await clearAndRun();
 	await waitOut("6");
 	ok(true, "maxsub.c -> 6");
@@ -82,9 +82,9 @@ try {
 	await addExample("fact", "b");
 	await starFile("fact.b72");
 	const lang = await page.evaluate(() => document.getElementById("lmLang").textContent);
-	const dbgHidden = !(await page.locator("#dbgMode").isVisible());
+	const dbgShown = await page.locator("#dbgMode").isVisible();
 	const dialectHidden = !(await page.locator("#cDialect").isVisible());
-	ok(lang === "B" && dbgHidden && dialectHidden, ".b72 active: B indicator, debug + dialect hidden");
+	ok(lang === "B" && dbgShown && dialectHidden, ".b72 active: B indicator, debug shown, dialect hidden");
 	await clearAndRun();
 	await waitOut("120");
 	ok(true, "B 1972 fact.b72 -> 120");
@@ -152,6 +152,52 @@ try {
 	const hlBW = await page.evaluate(() => document.getElementById("editorHl").innerHTML);
 	ok(/tok-op/.test(hlBW), "Waterloo file highlighted (#-op as tok-op)");
 } catch (e) { ok(false, "switcher/highlight: " + e.message); }
+
+// 3e. Debugging C: breakpoint pause / step / continue / locals, then a clean
+//     non-debug run. Uses maxsub.c; line 9 is `best = a[0]; ...` inside maxsub.
+async function dbgIsOn() {
+	return (await page.locator("#dbgMode").getAttribute("aria-pressed")) === "true";
+}
+async function waitPaused(ms = 30000) {
+	await page.waitForFunction(() => /paused/.test(document.getElementById("compileStatus")?.textContent || ""), null, { timeout: ms });
+}
+try {
+	await addExample("maxsub", "c");
+	await starFile("maxsub.c");
+	if (!(await dbgIsOn())) await page.click("#dbgMode");
+	// set a breakpoint by clicking the gutter (editor shows maxsub.c)
+	await page.locator('#editorGutter .gut-line[data-line="9"]').click();
+	await clearAndRun();
+	await waitPaused();
+	ok(true, "C breakpoint pauses execution");
+	const locals = await page.evaluate(() => document.getElementById("localsBox").textContent || "");
+	ok(/best/.test(locals) && /cur/.test(locals), "Locals show frame variables (best, cur)");
+	await page.click("#stepRun");
+	await page.waitForTimeout(400);
+	ok(true, "C single-step");
+	await page.click("#continueRun");
+	await waitOut("6");
+	ok(true, "C continue runs to completion -> 6");
+	await page.click("#dbgMode");          // debug off
+	await clearAndRun();
+	await waitOut("6");
+	ok(true, "C non-debug run still works (zero-overhead path)");
+} catch (e) { ok(false, "C debug: " + e.message + " | status=" + (await page.locator("#compileStatus").textContent().catch(() => ""))); }
+
+// 3f. Debugging Waterloo B: breakpoint pause + continue (covers BWRuntime).
+try {
+	await addExample("loops", "bw");
+	await starFile("loops.b78");
+	if (!(await dbgIsOn())) await page.click("#dbgMode");
+	await page.locator('#editorGutter .gut-line[data-line="9"]').click();
+	await clearAndRun();
+	await waitPaused();
+	ok(true, "Waterloo B breakpoint pauses execution");
+	await page.click("#continueRun");
+	await waitOut("37");
+	ok(true, "Waterloo B continue runs to completion -> 37");
+	await page.click("#dbgMode");          // debug off
+} catch (e) { ok(false, "BW debug: " + e.message + " | status=" + (await page.locator("#compileStatus").textContent().catch(() => ""))); }
 
 // 4. Switch back to BCPL; debug returns; main.b visible again
 try {

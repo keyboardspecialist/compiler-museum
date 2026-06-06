@@ -3,6 +3,8 @@
 // emitted WAT. Programs run under BWRuntime, which adds the B string library as
 // memory-aware wasm imports (char/lchar/putstr/getstr) on top of getchar/putchar.
 
+import { CRuntime, extractDbgMap } from "./lang-c.mjs";
+
 let factory = null;
 async function bwFactory() {
 	if (!factory)
@@ -10,9 +12,10 @@ async function bwFactory() {
 	return factory;
 }
 
-// source -> { wat, diagnostics }. `files` (optional) are the other workspace
-// files, written to MEMFS so `%filename` inclusion can resolve them.
-export async function compileBW(source, files) {
+// source -> { wat, diagnostics, dbgMap }. `files` (optional) are the other
+// workspace files, written to MEMFS so `%filename` inclusion can resolve them.
+// dbg=true compiles with -g (breakpoint hooks + frame-variable map).
+export async function compileBW(source, files, dbg = false) {
 	const make = await bwFactory();
 	const out = [], err = [];
 	const M = await make({
@@ -25,90 +28,61 @@ export async function compileBW(source, files) {
 		for (const f of files)
 			try { M.FS.writeFile("/" + f.name, f.content); } catch (e) { /* skip */ }
 	try {
-		M.callMain(["/in.b"]);
+		M.callMain(dbg ? ["-g", "/in.b"] : ["/in.b"]);
 	} catch (e) {
 		if (!(e && e.name === "ExitStatus")) err.push(String((e && e.message) || e));
 	}
-	return { wat: out.join("\n"), diagnostics: err.join("\n") };
+	const { wat, dbgMap } = extractDbgMap(out.join("\n"));
+	return { wat, diagnostics: err.join("\n"), dbgMap };
 }
 
-// Program runtime for Waterloo B. Like CRuntime (writeOut, input) but the env
-// adds the B string library. B strings/vectors are word-index pointers, so the
-// byte address of word-pointer `w` is w*4; strings are NUL-terminated, packed
-// one char per byte.
-export class BWRuntime {
-	constructor(writeOut, input) {
-		this.writeOut = writeOut || (() => {});
-		this.input = input || "";
-		this.bytes = null;
-	}
-	async loadProgramFromBytes(bytes) { this.bytes = bytes; }
-	setBreakpoints() {}
-	setSdlCanvas() {}
-	checkEntryOrdering() { return null; }
-	async run() {
-		const enc = new TextEncoder().encode(this.input);
-		let inpos = 0;
-		let inst = null;
-		const mem = () => new Uint8Array(inst.exports.memory.buffer);
-		const byte = (w) => (w >>> 0) * 4;	// word-index pointer -> byte address
-		const env = {
-			getchar: () => (inpos < enc.length ? enc[inpos++] : 0),
-			putchar: (c) => { this.writeOut(String.fromCharCode(c & 0xff)); return c & 0xff; },
-			putn: (n) => { this.writeOut(String(n | 0)); return n | 0; },
-			// i-th character of the string at word-pointer s
-			char: (s, i) => mem()[byte(s) + (i | 0)],
-			// store character c as the i-th character of s; returns c
-			lchar: (s, i, c) => { mem()[byte(s) + (i | 0)] = c & 0xff; return c & 0xff; },
-			// write the NUL-terminated string at s to output
-			putstr: (s) => {
-				const m = mem(); let a = byte(s), out = "";
-				while (m[a] !== 0) out += String.fromCharCode(m[a++]);
-				this.writeOut(out); return 0;
-			},
-			// read one input line into the buffer at s (NUL-terminated); returns s
-			getstr: (s) => {
-				const m = mem(); let a = byte(s);
-				while (inpos < enc.length) {
-					const ch = enc[inpos++];
-					if (ch === 10) break;
-					m[a++] = ch;
-				}
-				m[a] = 0; return s;
-			},
-			// printf(fmt, argbuf, argc): the compiler marshals the variadic args
-			// into the word-indexed buffer argbuf; walk the format pulling them.
-			printf: (fmt, argbuf, argc) => {
-				const rdword = (wi) => { const mm = mem(); const a = (wi >>> 0) * 4; return mm[a] | (mm[a + 1] << 8) | (mm[a + 2] << 16) | (mm[a + 3] << 24); };
-				const rdstr = (wi) => { const mm = mem(); let a = (wi >>> 0) * 4, s = ""; while (mm[a]) s += String.fromCharCode(mm[a++]); return s; };
-				const mm = mem();
-				let a = byte(fmt), out = "", ai = 0;
-				const nextarg = () => rdword((argbuf >>> 0) + ai++);
-				while (mm[a] !== 0) {
-					const c = mm[a++];
-					if (c === 37 /* % */) {
-						const f = mm[a++];
-						if (f === 100 /* d */) out += String(nextarg() | 0);
-						else if (f === 99 /* c */) out += String.fromCharCode(nextarg() & 0xff);
-						else if (f === 111 /* o */) out += (nextarg() >>> 0).toString(8);
-						else if (f === 115 /* s */) out += rdstr(nextarg());
-						else if (f === 37) out += "%";
-						else out += "%" + String.fromCharCode(f);
-					} else out += String.fromCharCode(c);
-				}
-				this.writeOut(out); return 0;
-			},
-			exit: (code) => { throw { __exit: code | 0 }; },
+// Program runtime for Waterloo B: CRuntime (with its asyncify debug driver,
+// breakpoints/step/locals) plus the B string library as memory-aware imports.
+// B strings/vectors are word-index pointers, so the byte address of word-pointer
+// `w` is w*4; strings are NUL-terminated, one char per byte.
+export class BWRuntime extends CRuntime {
+	_extraEnv(env, mem) {
+		const self = this;
+		const byte = (w) => (w >>> 0) * 4;
+		const rd = (a) => mem().getUint8(a);
+		const wr = (a, v) => mem().setUint8(a, v & 0xff);
+		env.char  = (s, i) => rd(byte(s) + (i | 0));
+		env.lchar = (s, i, c) => { wr(byte(s) + (i | 0), c); return c & 0xff; };
+		env.putstr = (s) => {
+			let a = byte(s), out = "", ch;
+			while ((ch = rd(a++))) out += String.fromCharCode(ch);
+			self.writeOut(out); return 0;
 		};
-		const { instance } = await WebAssembly.instantiate(this.bytes, { env });
-		inst = instance;
-		try {
-			if (typeof instance.exports.main === "function") return instance.exports.main() | 0;
-		} catch (e) {
-			if (e && typeof e.__exit === "number") return e.__exit;
-			throw e;
-		}
-		return 0;
+		env.getstr = (s) => {
+			let a = byte(s);
+			while (self._inPos < self._inEnc.length) {
+				const ch = self._inEnc[self._inPos++];
+				if (ch === 10) break;
+				wr(a++, ch);
+			}
+			wr(a, 0); return s;
+		};
+		// printf(fmt, argbuf, argc): the compiler marshals the variadic args into
+		// the word-indexed buffer argbuf; walk the format pulling them.
+		env.printf = (fmt, argbuf, argc) => {
+			const dv = mem();
+			const rdw = (wi) => dv.getInt32((wi >>> 0) * 4, true);
+			const rds = (wi) => { let a = (wi >>> 0) * 4, x = "", ch; while ((ch = dv.getUint8(a++))) x += String.fromCharCode(ch); return x; };
+			let a = byte(fmt), out = "", ai = 0, ch;
+			const nx = () => rdw((argbuf >>> 0) + ai++);
+			while ((ch = dv.getUint8(a++))) {
+				if (ch === 37 /* % */) {
+					const f = dv.getUint8(a++);
+					if (f === 100) out += String(nx() | 0);
+					else if (f === 99) out += String.fromCharCode(nx() & 0xff);
+					else if (f === 111) out += (nx() >>> 0).toString(8);
+					else if (f === 115) out += rds(nx());
+					else if (f === 37) out += "%";
+					else out += "%" + String.fromCharCode(f);
+				} else out += String.fromCharCode(ch);
+			}
+			self.writeOut(out); return 0;
+		};
 	}
 }
 export function makeBWRuntime(writeOut, input) { return new BWRuntime(writeOut, input); }

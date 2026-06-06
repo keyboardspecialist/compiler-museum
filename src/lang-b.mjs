@@ -4,6 +4,8 @@
 // WAT. B reuses the C runtime (makeCRuntime) unchanged -- identical getchar/
 // putchar imports and memory export -- so the shell's doRunC() handles it.
 
+import { extractDbgMap } from "./lang-c.mjs";
+
 let factory = null;
 async function bFactory() {
 	if (!factory)
@@ -11,8 +13,8 @@ async function bFactory() {
 	return factory;
 }
 
-// source -> { wat, diagnostics }
-export async function compileB(source) {
+// source -> { wat, diagnostics, dbgMap }. dbg=true compiles with -g.
+export async function compileB(source, dbg = false) {
 	const make = await bFactory();
 	const out = [], err = [];
 	const M = await make({
@@ -22,11 +24,12 @@ export async function compileB(source) {
 	});
 	M.FS.writeFile("/in.b", source);
 	try {
-		M.callMain(["/in.b"]);
+		M.callMain(dbg ? ["-g", "/in.b"] : ["/in.b"]);
 	} catch (e) {
 		if (!(e && e.name === "ExitStatus")) err.push(String((e && e.message) || e));
 	}
-	return { wat: out.join("\n"), diagnostics: err.join("\n") };
+	const { wat, dbgMap } = extractDbgMap(out.join("\n"));
+	return { wat, diagnostics: err.join("\n"), dbgMap };
 }
 
 // Library reference shown in the API tab when B (1972) is active.

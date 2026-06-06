@@ -65,8 +65,8 @@ next to `workspace:`) picks the active language — `bcpl` / `c` / `b` (1972) /
 active language re-scopes the left tabs: the **Files** pane groups files by
 language (`.b` BCPL, `.c` C, `.b72` B, `.b78` Waterloo; active group expanded,
 others a clickable header that switches language); **Examples** and **API** show
-only that language; the header indicator + the `C dialect` control + the BCPL
-debugger gate on it; and the editor highlights per dialect. Starring a file also
+only that language; the header indicator + the `C dialect` control gate on it;
+and the editor highlights + the debugger work per dialect. Starring a file also
 makes its language active. The compile entry is per-language (the starred-or-first
 file of the active language). Assets stay workspace-wide. Adding a compiler is a
 `lang-<x>.mjs` (compile + runtime + `*_EXAMPLES` + `*_API`) plus a small shell hook.
@@ -78,6 +78,17 @@ handles BCPL; `highlightClike(src, kwSet, escChar)` handles the C-like dialects
 (C / B / Waterloo) — comments, strings (escape char `\` for C, `*` for B),
 numbers, keywords, and operators (incl. Waterloo `#`-float ops). `syncEditor`
 dispatches on the active file's extension.
+
+## Debugging (all languages)
+
+The BCPL debugger (gutter breakpoints, pause / continue / step, current-line
+highlight, memory pane) now works for C / B / Waterloo too. Enabling **Debug
+mode** recompiles the entry with `-g` (the compiler emits a `__line` global, a
+gated `(call $__break)` per statement, and a `;;#dbg` frame-variable map) and
+asyncifies the wasm so `__break` can suspend. `CRuntime` (and `BWRuntime`, which
+extends it) drive the asyncify unwind/rewind loop; while paused, the **Locals**
+box shows the current frame's variables by name (read at `$fp + offset` from the
+`-g` map). Non-debug runs are unchanged (no `-g`, no asyncify).
 
 ## Reconciling the shell with upstream BCPL
 
