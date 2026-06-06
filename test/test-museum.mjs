@@ -236,6 +236,33 @@ try {
 	ok(/getchar/.test(ed), "C example name click opens a preview (source in editor)");
 } catch (e) { ok(false, "example preview: " + e.message); }
 
+// 4c. Closing tabs: previews vanish; a file tab closes but the file stays.
+try {
+	await selectLang("c");
+	await page.click('#leftTabs button[data-tab="examples"]');
+	await page.locator("#exampleList li", { hasText: "upper" }).last().locator(".name").click();
+	await page.waitForTimeout(200);
+	await page.locator('#sourceTabs .tab', { hasText: "preview" }).first().locator(".close").click();
+	await page.waitForTimeout(150);
+	const noPreview = await page.evaluate(() =>
+		![...document.querySelectorAll('#sourceTabs .tab')].some(t => /preview/.test(t.textContent)));
+	ok(noPreview, "closing a preview tab removes it");
+	await page.click('#leftTabs button[data-tab="files"]');   // Files pane (was on Examples)
+	await page.locator("#fileList li", { hasText: "maxsub.c" }).locator(".name").click();
+	await page.waitForTimeout(150);
+	// click the maxsub.c tab's close (tab strip may be scrolled; click via DOM)
+	await page.evaluate(() => {
+		const t = [...document.querySelectorAll('#sourceTabs .tab')].find(x => x.textContent.includes("maxsub.c"));
+		t.querySelector(".close").click();
+	});
+	await page.waitForTimeout(150);
+	const tabGone = await page.evaluate(() =>
+		![...document.querySelectorAll('#sourceTabs .tab')].some(t => t.textContent.includes("maxsub.c")));
+	const fileStays = await page.evaluate(() =>
+		[...document.querySelectorAll('#fileList li:not(.lang-group) .name')].some(n => n.textContent.includes("maxsub.c")));
+	ok(tabGone && fileStays, "closing a file tab keeps the file in the Files list");
+} catch (e) { ok(false, "close tabs: " + e.message); }
+
 // 5. Language choice persists across reload
 try {
 	await selectLang("c");
