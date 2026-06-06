@@ -2934,7 +2934,7 @@ LET start() = VALOF
       // lives between them and only shows for C).
       document.getElementById("lmLang").textContent  = c ? "C" : "BCPL";
       document.getElementById("lmAttrib").innerHTML = c
-        ? "Ritchie · Bell Labs · 1972"
+        ? '<a href="https://www.bell-labs.com/usr/dmr/www/" target="_blank" rel="noopener noreferrer">Ritchie</a> · Bell Labs · 1972'
         : '<a href="https://www.cl.cam.ac.uk/~mr10/" target="_blank" rel="noopener noreferrer">Richards</a> · Cambridge · 1967';
     }
     document.getElementById("cDialect").addEventListener("change", () => {
