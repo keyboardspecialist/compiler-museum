@@ -1,55 +1,57 @@
 # Compiler Museum
 
-A static, client-side web IDE that hosts historical compilers behind one
-interface: pick a language/dialect, edit, compile, inspect the emitted
-WebAssembly, and run — all in the browser. New compilers drop in as plugins.
+A web IDE that hosts historical compilers behind one interface — pick a
+language by file extension, edit, compile, inspect the emitted WebAssembly, and
+run, all client-side. A **downstream** project: it consumes two upstreams and
+modifies neither.
 
-The unifying idea: every compiler here emits **WAT**, so the run pipeline
-(`WAT → wabt assemble → wasm → host imports → run`) is shared. A plugin only
-turns *source → WAT* and supplies its *host imports*.
+- **BCPL distribution** (`../BCPLwasm/cintcode/site`) — Martin Richards' BCPL,
+  compiled to wasm, plus the IDE runtime, examples, and shell.
+- **1972 C compilers** (`../proto-c`) — Dennis Ritchie's `last1120` and
+  `prestruct` compilers, modernized to C89 with a WebAssembly backend.
+- (future languages drop in the same way.)
 
-## Run it
-
-```
-./compilers/build-c.sh          # build the C compilers to wasm (needs emscripten + ../proto-c)
-python3 -m http.server 8000     # any static server; ES modules need http(s), not file://
-# open http://localhost:8000/
-npm test                        # node smoke test of the compile+run pipeline
-```
-
-## In the box (Phase 1)
-
-- **1972 C** — the two modernized Ritchie compilers from `../proto-c`, each
-  built to wasm with emscripten:
-  - **last1120** (1972, older): no structures; an array name is a *reassignable
-    pointer* (B/BCPL semantics).
-  - **prestruct** (1973, newer): adds structures; array names *decay* to an
-    address (modern C).
-  - The signature contrast: the `bsem` example (reassigning an array name)
-    compiles under last1120 but is "Lvalue required" under prestruct.
-
-## Layout
+## Build & run
 
 ```
-index.html, app.mjs       the shell (pickers, editor, output, WAT, stdin, About)
-core/wat.mjs              WAT -> wasm (wabt, in-browser)
-core/run.mjs             instantiate + stdin/stdout + call entry
-core/registry.mjs        the plugin list
-plugins/c.mjs            the C compilers (both dialects)
-plugins/_template.mjs    copy this to add a compiler
-compilers/build-c.sh     emcc the C compilers -> compilers/*.wasm (gitignored)
-test/smoke.mjs           end-to-end node test
-ADDING-A-COMPILER.md     the plugin contract + steps
+./build.sh            # vendor BCPL core + build the C compilers -> site/
+./build.sh --full     # also include the heavy DOOM/textures demos
+cd site && python3 -m http.server 8000   # open http://localhost:8000/
+npm test              # playwright E2E (BCPL regression + C)
 ```
 
-## Adding a compiler
+`build.sh` rsyncs the BCPL site assets and emscripten-builds the C compilers
+into `site/` (gitignored, deployable). Override locations with `BCPL=` /
+`PROTOC=`.
 
-See `ADDING-A-COMPILER.md`. In short: one `plugins/<id>.mjs` implementing
-`compile()` + `hostImports()`, one line in `core/registry.mjs`. If it emits WAT,
-the shared core already runs it.
+## What's museum-owned vs vendored
 
-## Roadmap
+Tracked (museum-owned):
+```
+src/index.html      forked BCPL IDE shell + the C integration
+src/lang-c.mjs      C language module: compile (cfront-wasm -> WAT), CRuntime, examples
+compilers/build-c.sh emcc proto-c -> site/compilers/cfront-{prestruct,1120}.{wasm,mjs}
+build.sh            assembles site/ from the upstreams
+test/test-museum.mjs playwright E2E
+```
+Everything else under `site/` is vendored/built and gitignored.
 
-- Phase 2: BCPL plugin (wrap the existing `BCPLwasm/cintcode/site` compiler-in-wasm).
-- Phase 3: "About" panels with the lineage narrative (BCPL → last1120 →
-  prestruct → modern C), a cross-language example gallery.
+## How a language is chosen
+
+By the **entry file's extension**: `.c` -> the C compiler (dialect picked by the
+`C dialect` control), anything else -> BCPL. `.b` and `.c` files coexist in the
+files pane; the BCPL debugger gates off when the entry is `.c` (C is greenfield —
+its own debugging can come later). Adding a compiler is a `lang-<x>.mjs` plus a
+small shell hook.
+
+## Reconciling the shell with upstream BCPL
+
+`src/index.html` is a fork of the BCPL IDE's `index.html` (BCPL has no plugin
+layer). The C delta is ~136 lines; the bulk of the C surface lives in
+`lang-c.mjs`. To pull upstream IDE changes:
+
+```
+diff $BCPL/index.html src/index.html      # review; re-apply the C delta
+```
+
+Fork base: BCPL `cintcode/site/index.html` as of June 2026.

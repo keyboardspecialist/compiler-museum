@@ -1,6 +1,4 @@
-# emscripten build outputs (regenerate with compilers/build-c.sh)
-compilers/*.wasm
-compilers/*.mjs
+# build output (regenerate with ./build.sh)
+site/
+node_modules/
 .DS_Store
-/tmp
-node_modules

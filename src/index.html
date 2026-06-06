@@ -1,0 +1,4211 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <title>BCPL &rarr; WebAssembly playground</title>
+  <!-- Apply stored theme preference BEFORE any CSS or content paints
+       so users don't see a flash of dark mode while the main module
+       script loads (it runs at end of body). Defaults to "light"; only
+       switches if the user previously toggled to dark and the choice
+       was persisted to localStorage. -->
+  <script>
+    try {
+      const t = localStorage.getItem("bcpl-playground-theme") || "light";
+      if (t === "dark") document.documentElement.removeAttribute("data-theme");
+      else document.documentElement.setAttribute("data-theme", "light");
+    } catch (e) { /* SSR / private mode — leave the markup default (light) */ }
+  </script>
+  <style>
+    /* Bundled monospace font: Intel One Mono, SIL OFL 1.1.
+       Self-hosted under site/fonts/intel-one-mono/. Falls back to the
+       OS default mono if the woff2 fails to load (offline, etc.). */
+    @font-face {
+      font-family: "Intel One Mono";
+      src: url("fonts/intel-one-mono/IntelOneMono-Regular.woff2") format("woff2");
+      font-weight: 400;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "Intel One Mono";
+      src: url("fonts/intel-one-mono/IntelOneMono-Italic.woff2") format("woff2");
+      font-weight: 400;
+      font-style: italic;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "Intel One Mono";
+      src: url("fonts/intel-one-mono/IntelOneMono-Bold.woff2") format("woff2");
+      font-weight: 700;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "Intel One Mono";
+      src: url("fonts/intel-one-mono/IntelOneMono-BoldItalic.woff2") format("woff2");
+      font-weight: 700;
+      font-style: italic;
+      font-display: swap;
+    }
+    :root {
+      color-scheme: dark;
+      --bg:       #0b0f15;
+      --bg-2:     #0e1116;
+      --bg-3:     #141a23;
+      --border:   #242a34;
+      --fg:       #e6edf3;
+      --fg-dim:   #8b95a5;
+      --accent:   #6cb6ff;
+      --entry:    #ffbe55;
+      --err:      #f07178;
+      --tok-kw:   #c792ea;
+      --tok-str:  #c3e88d;
+      --tok-num:  #f78c6c;
+      --tok-com:  #6b7480;
+      --tok-op:   #89ddff;
+    }
+    /* Light theme: Visual C++ 6 colour scheme. White background,
+       black text, blue keywords, green comments, maroon strings. */
+    [data-theme="light"] {
+      color-scheme: light;
+      /* Classic VC++ 6 / Win9x palette. bg-2 (#d4d0c8) is the
+         "ButtonFace" chrome color used for menus, tabs, status bars,
+         button surfaces. bg (#ffffff) is the document/code window
+         color. bg-3 stays a slightly darker hover tint. */
+      --bg:       #ffffff;
+      --bg-2:     #d4d0c8;
+      --bg-3:     #c0bcb4;
+      --border:   #808080;
+      --fg:       #000000;
+      --fg-dim:   #606060;
+      --accent:   #0a246a;   /* VC6 active-titlebar deep navy */
+      --entry:    #800080;
+      --err:      #c80000;
+      --vc6-hi:   #ffffff;   /* bevel highlight (top/left) */
+      --vc6-lo:   #404040;   /* bevel deep shadow (bottom/right outer) */
+      --vc6-sh:   #808080;   /* bevel mid shadow */
+      --vc6-sel:  #000080;   /* selected row background — Win9x COLOR_HIGHLIGHT */
+      --tok-kw:   #0000ff;   /* classic VC6 keyword blue */
+      --tok-str:  #a31515;   /* maroon for string literals */
+      --tok-num:  #000000;   /* numbers stay black like in VC6 */
+      --tok-com:  #008000;   /* green comments */
+      --tok-op:   #000000;   /* operators black */
+    }
+    [data-theme="light"] body {
+      font-family: "MS Sans Serif", "Tahoma", "Segoe UI", sans-serif;
+      font-size: 12px;
+      background: var(--bg-2);
+    }
+    [data-theme="light"] header {
+      background: var(--bg-2);
+      border-bottom: 1px solid var(--vc6-lo);
+      box-shadow: inset 0 -1px 0 var(--vc6-hi), inset 0 1px 0 var(--vc6-hi);
+    }
+    [data-theme="light"] .tok-kw  { font-weight: normal; }
+    [data-theme="light"] .tok-com { font-style: normal; }
+    [data-theme="light"] .gutter  {
+      background: #c0c0c0; color: #000;
+      border-right: 1px solid var(--vc6-sh);
+    }
+    /* Classic 3D raised bevel (buttons, toolbar surfaces). */
+    [data-theme="light"] .action-row button,
+    [data-theme="light"] .file-actions button,
+    [data-theme="light"] .preview-note button,
+    [data-theme="light"] .mem-controls button,
+    [data-theme="light"] .ws-bar button,
+    [data-theme="light"] .theme-toggle,
+    [data-theme="light"] .collapse-btn,
+    [data-theme="light"] .canvas-fs-btn {
+      background: #d4d0c8;
+      color: #000;
+      border-top:    1px solid var(--vc6-hi);
+      border-left:   1px solid var(--vc6-hi);
+      border-right:  1px solid var(--vc6-lo);
+      border-bottom: 1px solid var(--vc6-lo);
+      box-shadow: inset -1px -1px 0 var(--vc6-sh),
+                  inset  1px  1px 0 #f0f0f0;
+      border-radius: 0;
+      font-family: inherit;
+      font-weight: 400;
+      cursor: pointer;
+    }
+    [data-theme="light"] .action-row button:hover:not(:disabled),
+    [data-theme="light"] .file-actions button:hover,
+    [data-theme="light"] .preview-note button:hover,
+    [data-theme="light"] .mem-controls button:hover,
+    [data-theme="light"] .ws-bar button:hover,
+    [data-theme="light"] .theme-toggle:hover,
+    [data-theme="light"] .collapse-btn:hover,
+    [data-theme="light"] .canvas-fs-btn:hover {
+      background: #e0dcd4;
+      border-color: #000;
+    }
+    [data-theme="light"] .action-row button:active:not(:disabled),
+    [data-theme="light"] .file-actions button:active,
+    [data-theme="light"] .preview-note button:active,
+    [data-theme="light"] .mem-controls button:active,
+    [data-theme="light"] .ws-bar button:active,
+    [data-theme="light"] .theme-toggle:active,
+    [data-theme="light"] .collapse-btn:active,
+    [data-theme="light"] .canvas-fs-btn:active {
+      border-top:    1px solid var(--vc6-lo);
+      border-left:   1px solid var(--vc6-lo);
+      border-right:  1px solid var(--vc6-hi);
+      border-bottom: 1px solid var(--vc6-hi);
+      box-shadow: inset 1px 1px 0 var(--vc6-sh);
+    }
+    .cmd-strip {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.3rem 0.6rem;
+      background: var(--bg-2);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .cmd-strip button {
+      font: inherit;
+      font-size: 0.78rem;
+      background: var(--bg-2);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      padding: 0.15rem 0.55rem;
+      border-radius: 2px;
+      cursor: pointer;
+    }
+    .cmd-strip button.primary {
+      background: var(--accent);
+      color: #000;
+      font-weight: 600;
+      border-color: var(--accent);
+    }
+    .cmd-strip button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    .cmd-strip button:hover:not(:disabled) { border-color: var(--accent); }
+    .cmd-strip .cmd-sep {
+      width: 1px;
+      align-self: stretch;
+      background: var(--border);
+      margin: 0 0.3rem;
+    }
+    .cmd-strip .compile-status { margin-left: 0.6rem; }
+    .cmd-strip .entry-badge {
+      margin-left: auto;
+      font-size: 0.78rem;
+      padding: 0.15rem 0.5rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      color: var(--fg-dim);
+    }
+    .cmd-strip .entry-badge .entry-badge-key { color: var(--fg-dim); }
+    .cmd-strip .entry-badge .entry-badge-name { color: var(--entry); font-weight: 600; }
+    .cmd-strip .entry-badge .entry-badge-implicit { font-style: italic; opacity: 0.85; }
+    .file-hint {
+      padding: 0.35rem 0.5rem 0.2rem;
+      font-size: 0.7rem;
+      color: var(--fg-dim);
+      line-height: 1.35;
+    }
+    /* Sticky toggle button — looks like a regular cmd-strip button,
+       but stays "pressed" when .on is set. Click flips state. */
+    .cmd-strip .toggle-btn.on {
+      background: var(--accent);
+      color: #000;
+      border-color: var(--accent);
+      box-shadow: inset 1px 1px 2px rgba(0,0,0,0.25);
+    }
+    [data-theme="light"] .cmd-strip .toggle-btn.on {
+      background: #b8d4f0;
+      color: #000;
+      border-top:    1px solid var(--vc6-lo);
+      border-left:   1px solid var(--vc6-lo);
+      border-right:  1px solid var(--vc6-hi);
+      border-bottom: 1px solid var(--vc6-hi);
+      box-shadow: inset 1px 1px 0 var(--vc6-sh);
+    }
+    /* Re-apply VC++6 raised bevel + sunken active to the cmd-strip
+       buttons under the light theme. */
+    [data-theme="light"] .cmd-strip {
+      background: var(--bg-2);
+      border-bottom: 1px solid var(--vc6-lo);
+      box-shadow: inset 0 -1px 0 var(--vc6-hi);
+    }
+    [data-theme="light"] .cmd-strip button {
+      background: #d4d0c8;
+      color: #000;
+      border-top:    1px solid var(--vc6-hi);
+      border-left:   1px solid var(--vc6-hi);
+      border-right:  1px solid var(--vc6-lo);
+      border-bottom: 1px solid var(--vc6-lo);
+      box-shadow: inset -1px -1px 0 var(--vc6-sh), inset 1px 1px 0 #f0f0f0;
+      border-radius: 0;
+    }
+    [data-theme="light"] .cmd-strip button.primary {
+      font-weight: 700;
+      background: #d4d0c8;
+      color: var(--vc6-sel);
+    }
+    [data-theme="light"] .cmd-strip button:hover:not(:disabled) {
+      background: #e0dcd4;
+      border-color: #000;
+    }
+    [data-theme="light"] .cmd-strip button:active:not(:disabled) {
+      border-top:    1px solid var(--vc6-lo);
+      border-left:   1px solid var(--vc6-lo);
+      border-right:  1px solid var(--vc6-hi);
+      border-bottom: 1px solid var(--vc6-hi);
+      box-shadow: inset 1px 1px 0 var(--vc6-sh);
+    }
+    .ws-bar select, .ws-bar button, .ws-bar input {
+      font: inherit;
+      font-size: 0.78rem;
+      background: var(--bg-2);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      padding: 0.1rem 0.4rem;
+      border-radius: 2px;
+      cursor: pointer;
+    }
+    .ws-bar select { min-width: 8rem; }
+    .ws-bar button:hover { border-color: var(--accent); }
+    /* Sunken bevel for input fields and selects (the classic
+       Win9x EDIT-control look). */
+    [data-theme="light"] .mem-controls input,
+    [data-theme="light"] .mem-controls select,
+    [data-theme="light"] .ws-bar select,
+    [data-theme="light"] #stdin {
+      background: #ffffff;
+      color: #000;
+      border-top:    1px solid var(--vc6-sh);
+      border-left:   1px solid var(--vc6-sh);
+      border-right:  1px solid var(--vc6-hi);
+      border-bottom: 1px solid var(--vc6-hi);
+      box-shadow: inset 1px 1px 0 var(--vc6-lo),
+                  inset -1px -1px 0 #f0f0f0;
+      border-radius: 0;
+    }
+    /* Notebook-style tabs (top tabs in left pane + source tabs +
+       output tabs). Inactive tabs sit on the chrome face, active
+       tab raised flush with the content below it. */
+    [data-theme="light"] .tabs,
+    [data-theme="light"] .source-tabs,
+    [data-theme="light"] .output-tabs {
+      background: var(--bg-2);
+      border-bottom: 1px solid var(--vc6-lo);
+    }
+    [data-theme="light"] .tabs .tab,
+    [data-theme="light"] .right-pane .source-tabs .tab,
+    [data-theme="light"] .output-tabs .otab {
+      background: #d4d0c8;
+      color: #000;
+      border-top:    1px solid var(--vc6-hi);
+      border-left:   1px solid var(--vc6-hi);
+      border-right:  1px solid var(--vc6-lo);
+      border-bottom: 0;
+      padding: 0.25rem 0.7rem;
+      font-family: inherit;
+      font-size: 12px;
+      text-transform: none;
+      letter-spacing: 0;
+      cursor: pointer;
+    }
+    [data-theme="light"] .tabs .tab.active,
+    [data-theme="light"] .right-pane .source-tabs .tab.active,
+    [data-theme="light"] .output-tabs .otab.active {
+      background: #ffffff;
+      color: #000;
+      font-weight: 700;
+      box-shadow: none;
+      border-bottom: 1px solid #ffffff;   /* punch through divider */
+      margin-bottom: -1px;
+    }
+    /* Pane chrome (left-pane, right-pane, output-pane backgrounds).
+       Only the bare pane root stays gray — that's the strip behind
+       the tab bar / pane-header. The content bodies inside each pane
+       (tab bodies, editor, output panes) get pure-white code-window
+       backgrounds so the gray chrome only frames active content. */
+    [data-theme="light"] .left-pane,
+    [data-theme="light"] .right-pane,
+    [data-theme="light"] .output-pane {
+      background: var(--bg-2);
+    }
+    [data-theme="light"] .tab-body,
+    [data-theme="light"] .editor-wrap,
+    [data-theme="light"] .editor-host,
+    [data-theme="light"] .hl-wrap {
+      background: #ffffff;
+    }
+    /* #userSrc must stay background:transparent — the .hl pane
+       underneath holds the syntax-coloured text. Making the textarea
+       opaque-white blanks the highlight layer. */
+    [data-theme="light"] .workspace {
+      background: var(--vc6-lo);   /* 1px gutter between panes */
+    }
+    /* Pane headers (the "STDIN (consumed by rdch)" style strip). */
+    [data-theme="light"] .pane-header {
+      background: var(--bg-2);
+      color: #000;
+      border-bottom: 1px solid var(--vc6-sh);
+      box-shadow: inset 0 1px 0 var(--vc6-hi);
+      text-transform: none;
+      letter-spacing: 0;
+      font-weight: 700;
+    }
+    /* File list rows: selected row gets classic blue highlight. */
+    [data-theme="light"] .file-list li {
+      background: transparent;
+    }
+    [data-theme="light"] .file-list li.active {
+      background: var(--vc6-sel);
+      color: #ffffff;
+    }
+    [data-theme="light"] .file-list li.active a,
+    [data-theme="light"] .file-list li.active button,
+    [data-theme="light"] .file-list li.active span { color: #ffffff; }
+    /* Output bodies: white code-window look. */
+    [data-theme="light"] #output,
+    [data-theme="light"] #diagBody,
+    [data-theme="light"] #crashBody,
+    [data-theme="light"] #memDump,
+    [data-theme="light"] #liveWat {
+      background: #ffffff;
+      color: #000;
+    }
+    /* Compile-status text + paused marker readable on gray chrome. */
+    [data-theme="light"] .compile-status { color: #000; }
+    [data-theme="light"] .compile-status.err { color: var(--err); }
+    /* Debugger checkbox label readable. */
+    [data-theme="light"] .dbg-toggle { color: #000; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      font-size: 14px;
+      line-height: 1.4;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      padding: 0.6rem 1rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: baseline;
+      gap: 1rem;
+      flex-shrink: 0;
+    }
+    header h1 { font-size: 1.1rem; margin: 0; }
+    header .sub { color: var(--fg-dim); font-size: 0.8rem; }
+
+    .workspace {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 18rem 1fr;
+      grid-template-rows: 1fr 16rem;
+      gap: 1px;
+      background: var(--border);
+      overflow: hidden;
+    }
+    /* When the SDL canvas is active, give the output pane more room
+       so 960×720 renders aren't shrunk down to a postage stamp. */
+    body:has(.output-pane.with-canvas) .workspace {
+      grid-template-rows: 1fr 32rem;
+    }
+    /* Collapsed output pane — only the header strip remains, giving
+       the editor the rest of the screen. Overrides the with-canvas
+       expansion above. */
+    body.output-collapsed .workspace,
+    body.output-collapsed:has(.output-pane.with-canvas) .workspace {
+      grid-template-rows: 1fr 1.9rem;
+    }
+    body.output-collapsed .output-pane > :not(.pane-header):not(.collapse-btn) {
+      display: none !important;
+    }
+    .output-pane { position: relative; }
+    .collapse-btn {
+      position: absolute;
+      top: 0.2rem;
+      left: 0.4rem;
+      z-index: 5;
+      background: var(--bg-2);
+      color: var(--fg-dim);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      padding: 0 0.45rem;
+      cursor: pointer;
+      font-size: 0.75rem;
+      line-height: 1.4rem;
+    }
+    .collapse-btn:hover { color: var(--fg); }
+    .left-pane, .right-pane, .output-pane {
+      background: var(--bg);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .output-pane { grid-column: 1 / -1; }
+
+    /* Tab strip shared styles */
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-2);
+      flex-shrink: 0;
+    }
+    .tab {
+      padding: 0.4rem 0.9rem;
+      background: transparent;
+      border: 0;
+      border-right: 1px solid var(--border);
+      color: var(--fg-dim);
+      cursor: pointer;
+      font: inherit;
+      font-size: 0.85rem;
+    }
+    .tab.active {
+      background: var(--bg);
+      color: var(--fg);
+      border-bottom: 2px solid var(--accent);
+      margin-bottom: -1px;
+    }
+    .tab:hover:not(.active) { color: var(--fg); }
+
+    .tab-body {
+      flex: 1;
+      overflow: auto;
+      padding: 0.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .tab-body.hidden { display: none; }
+
+    /* File list */
+    .file-list, .example-list, .api-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      font-family: "Intel One Mono", ui-monospace, monospace;
+      font-size: 0.82rem;
+      flex: 1;
+      overflow: auto;
+    }
+    .file-list li, .example-list li, .api-list li {
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+      padding: 0.2rem 0.4rem;
+      border-radius: 3px;
+      cursor: pointer;
+    }
+    .file-list li:hover, .example-list li:hover, .api-list li:hover {
+      background: var(--bg-3);
+    }
+    .file-list li.active, .example-list li.active, .api-list li.active {
+      background: var(--bg-3);
+      color: var(--fg);
+    }
+    .file-list li .name { flex: 1; }
+    .file-list li .name.entry { color: var(--entry); font-weight: 700; }
+    .example-add {
+      background: transparent;
+      border: 1px solid var(--bg-3);
+      color: var(--fg-dim);
+      padding: 0 0.35rem;
+      border-radius: 3px;
+      cursor: pointer;
+      font: inherit;
+      line-height: 1;
+      opacity: 0;
+      transition: opacity 0.1s;
+    }
+    .example-list li:hover .example-add { opacity: 1; }
+    .example-add:hover { color: var(--accent); border-color: var(--accent); }
+    /* Click-to-set-entry star, leading every .b file row. Filled
+       for the current entry, hollow otherwise. Hover gives a subtle
+       cue that it's interactive. */
+    .file-list li .entry-star {
+      flex: 0 0 auto;
+      width: 1.1rem;
+      text-align: center;
+      padding: 0 0.15rem;
+      margin-right: 0.2rem;
+      background: transparent;
+      color: var(--fg-dim);
+      border: 0;
+      cursor: pointer;
+      font: inherit;
+      line-height: 1;
+    }
+    .file-list li .entry-star.on  { color: var(--entry); }
+    .file-list li .entry-star:hover { color: var(--entry); }
+    .file-list li .entry-star.placeholder {
+      visibility: hidden;
+      cursor: default;
+    }
+    .file-list li button {
+      padding: 0 0.3rem;
+      font-size: 0.7rem;
+      background: transparent;
+      color: var(--fg-dim);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      cursor: pointer;
+    }
+    .file-list li button:hover { color: var(--fg); }
+
+    .file-actions {
+      display: flex;
+      gap: 0.3rem;
+      flex-wrap: wrap;
+    }
+    .file-actions button {
+      padding: 0.25rem 0.5rem;
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      color: var(--fg);
+      border-radius: 3px;
+      cursor: pointer;
+      font: inherit;
+      font-size: 0.75rem;
+    }
+    .file-actions button:hover { border-color: var(--accent); }
+
+    /* API pane */
+    .api-filter {
+      width: 100%;
+      padding: 0.3rem 0.5rem;
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      color: var(--fg);
+      border-radius: 3px;
+      font: inherit;
+      font-size: 0.85rem;
+    }
+    .api-list { max-height: 18rem; }
+    .api-list .cat {
+      font-size: 0.65rem;
+      color: var(--fg-dim);
+      margin-left: auto;
+    }
+    .api-list .cat-header {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      padding: 0.25rem 0.4rem;
+      background: var(--bg-2);
+      color: var(--fg);
+      font-weight: 600;
+      font-size: 0.78rem;
+      border-radius: 3px;
+      margin-top: 0.2rem;
+      cursor: pointer;
+      user-select: none;
+    }
+    .api-list .cat-header .cat-arrow {
+      width: 1rem;
+      color: var(--fg-dim);
+    }
+    .api-list .cat-header .cat-name { flex: 1; text-transform: uppercase; letter-spacing: 0.04em; }
+    .api-list .cat-header .cat-count {
+      color: var(--fg-dim);
+      font-size: 0.7rem;
+      font-weight: normal;
+    }
+    .api-list .api-item {
+      padding-left: 1.4rem;
+      font-family: "Intel One Mono", ui-monospace, monospace;
+    }
+    .api-detail {
+      border-top: 1px solid var(--border);
+      padding: 0.5rem;
+      font-size: 0.82rem;
+    }
+    .api-detail .sig {
+      font-family: "Intel One Mono", ui-monospace, monospace;
+      color: var(--accent);
+      margin-bottom: 0.3rem;
+    }
+    .api-detail .desc {
+      color: var(--fg-dim);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .api-detail .desc.long {
+      max-height: 8.5rem;
+      overflow: auto;
+      border-top: 1px dashed var(--border);
+      padding-top: 0.3rem;
+    }
+    .api-detail .desc.long.expanded {
+      max-height: 24rem;
+    }
+    .api-detail .toggle {
+      display: inline-block;
+      margin-left: 0.4rem;
+      padding: 0 0.35rem;
+      font-size: 0.7rem;
+      cursor: pointer;
+      color: var(--accent);
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 3px;
+    }
+
+    /* Right pane */
+    .right-pane { background: var(--bg-2); }
+    .right-pane .source-tabs {
+      overflow-x: auto;
+      scrollbar-width: thin;
+    }
+    .right-pane .source-tabs .tab {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      white-space: nowrap;
+    }
+    .right-pane .source-tabs .tab .close {
+      padding: 0 0.2rem;
+      color: var(--fg-dim);
+      background: transparent;
+      border: 0;
+      cursor: pointer;
+      font-size: 0.75rem;
+    }
+    .right-pane .source-tabs .tab .close:hover { color: var(--err); }
+    .right-pane .source-tabs .tab.preview { font-style: italic; }
+    .right-pane .source-tabs .tab.wat-tab { color: var(--accent); }
+    .right-pane .source-tabs .tab.entry::before {
+      content: "*";
+      color: var(--entry);
+      margin-right: 0.25rem;
+    }
+    .editor-host {
+      flex: 1;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .editor-wrap {
+      flex: 1;
+      display: flex;
+      position: relative;
+      overflow: hidden;
+      background: var(--bg-2);
+    }
+    .gutter {
+      width: 3rem;
+      flex: 0 0 auto;
+      padding: 0.6rem 0.4rem 0.6rem 0.6rem;
+      text-align: right;
+      color: var(--fg-dim);
+      background: var(--bg);
+      font-family: "Intel One Mono", ui-monospace, monospace;
+      font-size: 0.8rem;
+      line-height: 1.5;
+      white-space: pre;
+      overflow: hidden;
+      user-select: none;
+      border-right: 1px solid var(--border);
+    }
+    .hl-wrap {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+    }
+    .hl, #userSrc {
+      position: absolute;
+      inset: 0;
+      margin: 0;
+      padding: 0.6rem;
+      font-family: "Intel One Mono", ui-monospace, monospace;
+      font-size: 0.8rem;
+      line-height: 1.5;
+      white-space: pre;
+      tab-size: 2;
+      border: 0;
+      box-sizing: border-box;
+    }
+    .hl {
+      pointer-events: none;
+      color: var(--fg);
+      overflow: hidden;
+    }
+    #userSrc {
+      background: transparent;
+      color: transparent;
+      caret-color: var(--fg);
+      resize: none;
+      outline: none;
+      overflow: auto;
+      width: 100%;
+      height: 100%;
+    }
+    #userSrc[readonly] {
+      caret-color: transparent;
+    }
+    .editor-wrap.is-readonly { background: var(--bg); }
+    .editor-wrap.is-readonly .hl,
+    .editor-wrap.is-readonly .hl span { color: var(--fg-dim); }
+    .gutter .gut-line { display: block; }
+    .gutter .gut-line.err {
+      color: var(--err);
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .gutter .gut-line.err::before {
+      content: "●";
+      margin-right: 0.2rem;
+    }
+    .gutter .gut-line.bp {
+      color: #4a9eff;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .gutter .gut-line.bp::before {
+      content: "●";
+      color: #4a9eff;
+      margin-right: 0.2rem;
+    }
+    /* err + bp: bp dot wins (blue), text stays red */
+    .gutter .gut-line.err.bp { color: var(--err); }
+    .gutter .gut-line.err.bp::before { color: #4a9eff; }
+    .err-bands {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      overflow: hidden;
+      z-index: 0;
+    }
+    .err-bands .err-band {
+      position: absolute;
+      left: 0; right: 0;
+      background: rgba(255, 80, 80, 0.10);
+      border-left: 2px solid var(--err);
+      pointer-events: none;
+    }
+    [data-theme="light"] .err-bands .err-band {
+      background: rgba(200, 0, 0, 0.08);
+    }
+    .err-bands .pause-band {
+      position: absolute;
+      left: 0; right: 0;
+      background: rgba(255, 220, 80, 0.18);
+      border-left: 3px solid #d4a017;
+      pointer-events: none;
+    }
+    [data-theme="light"] .err-bands .pause-band {
+      background: rgba(255, 200, 80, 0.35);
+      border-left-color: #b87f00;
+    }
+    .tok-kw  { color: var(--tok-kw); font-weight: 600; }
+    .tok-str { color: var(--tok-str); }
+    .tok-num { color: var(--tok-num); }
+    .tok-com { color: var(--tok-com); font-style: italic; }
+    .tok-op  { color: var(--tok-op); }
+    #liveWat {
+      flex: 1;
+      width: 100%;
+      margin: 0;
+      border: 0;
+      padding: 0.6rem;
+      background: var(--bg-2);
+      color: var(--fg);
+      font-family: "Intel One Mono", ui-monospace, monospace;
+      font-size: 0.8rem;
+      resize: none;
+      outline: none;
+      line-height: 1.5;
+    }
+    .theme-toggle {
+      margin-left: 0.5rem;
+      padding: 0.2rem 0.55rem;
+      background: var(--bg-3);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.75rem;
+    }
+    .theme-toggle:hover { border-color: var(--accent); }
+    #liveWat {
+      white-space: pre-wrap;
+      overflow: auto;
+      margin: 0;
+    }
+    #wasmView {
+      flex: 1;
+      overflow: auto;
+      padding: 0;
+      background: var(--bg);
+    }
+    #wasmView .wasm-header {
+      padding: 0.5rem 0.7rem;
+      font-family: "Intel One Mono", ui-monospace, monospace;
+      font-size: 0.78rem;
+      white-space: pre;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-2);
+      color: var(--fg);
+    }
+    #wasmView .wasm-header .k    { color: var(--fg-dim); }
+    #wasmView .wasm-header .v    { color: var(--accent); }
+    #wasmView .wasm-header .yes  { color: #79c879; }
+    #wasmView .wasm-header .no   { color: var(--err); font-weight: 600; }
+    #wasmView .wasm-disasm {
+      padding: 0.4rem 0.7rem;
+    }
+    #wasmView .wasm-disasm > summary {
+      cursor: pointer;
+      color: var(--accent);
+      padding: 0.25rem 0;
+    }
+    #wasmDisasm {
+      white-space: pre;
+      overflow: auto;
+      margin: 0;
+      max-height: 60vh;
+      font-family: "Intel One Mono", ui-monospace, monospace;
+      font-size: 0.78rem;
+    }
+    [data-theme="light"] #wasmView .wasm-header .v { color: var(--vc6-sel); }
+    [data-theme="light"] #wasmView .wasm-header .yes { color: #006400; }
+    [data-theme="light"] #wasmView .wasm-disasm > summary { color: var(--vc6-sel); }
+    .preview-note {
+      background: var(--bg-3);
+      color: var(--fg-dim);
+      font-size: 0.78rem;
+      padding: 0.4rem 0.6rem;
+      display: none;
+      border-bottom: 1px solid var(--border);
+      gap: 0.5rem;
+      align-items: flex-start;
+    }
+    .preview-note.visible { display: flex; }
+    .preview-note button {
+      padding: 0.2rem 0.5rem;
+      background: var(--accent);
+      color: #000;
+      border: 0;
+      border-radius: 3px;
+      cursor: pointer;
+      font: inherit;
+      font-size: 0.75rem;
+      flex-shrink: 0;
+    }
+    .preview-note button:disabled {
+      background: var(--bg-2);
+      color: var(--fg-dim);
+      cursor: not-allowed;
+    }
+    .preview-meta .title {
+      color: var(--fg);
+      font-weight: 600;
+      font-size: 0.85rem;
+    }
+    .preview-meta .badge {
+      display: inline-block;
+      margin-left: 0.4rem;
+      padding: 0 0.35rem;
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      font-size: 0.65rem;
+      color: var(--fg-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .preview-meta .summary { margin-top: 0.2rem; }
+    .preview-meta ul {
+      margin: 0.2rem 0 0 1.1rem;
+      padding: 0;
+    }
+    .preview-meta li { margin: 0; }
+    .action-row {
+      padding: 0.4rem 0.6rem;
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+      flex-shrink: 0;
+      background: var(--bg);
+    }
+    .action-row button {
+      padding: 0.4rem 0.8rem;
+      font: inherit;
+      background: var(--accent);
+      color: #000;
+      border: 0;
+      border-radius: 3px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .action-row button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    .compile-status {
+      font-size: 0.8rem;
+      color: var(--fg-dim);
+    }
+    .compile-status.err { color: var(--err); }
+    .compile-status.paused { color: #d4a017; font-weight: 600; }
+    [data-theme="light"] .compile-status.paused { color: #b87f00; }
+    .dbg-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      font-size: 0.8rem;
+      color: var(--fg-dim);
+      user-select: none;
+      cursor: pointer;
+    }
+    .dbg-toggle input { margin: 0; }
+
+    /* Output / stdin / canvas */
+    .output-pane {
+      display: grid;
+      grid-template-columns: 1fr 20rem;
+      grid-template-rows: auto 1fr;
+      gap: 1px;
+      background: var(--border);
+    }
+    .output-pane.with-canvas {
+      grid-template-columns: 1fr 18rem 48rem;
+    }
+    .output-pane .pane-header {
+      padding: 0.3rem 0.6rem;
+      background: var(--bg-2);
+      font-size: 0.78rem;
+      color: var(--fg-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    #output, #stdin, .otab-body {
+      margin: 0;
+      padding: 0.5rem 0.6rem;
+      background: var(--bg-2);
+      color: var(--fg);
+      font-family: "Intel One Mono", ui-monospace, monospace;
+      font-size: 0.8rem;
+      overflow: auto;
+      border: 0;
+      outline: none;
+      resize: none;
+      white-space: pre-wrap;
+    }
+    .output-tabs {
+      display: flex;
+      gap: 0;
+      background: var(--bg-2);
+      /* leave clearance for the absolute-positioned collapse button
+         (top:0.2rem / left:0.4rem, ~2.2rem wide); otherwise the first
+         tab sits under it and is unclickable. */
+      padding-left: 2.4rem;
+      align-items: stretch;
+    }
+    .output-tabs .otab {
+      background: transparent;
+      border: 0;
+      border-right: 1px solid var(--border);
+      color: var(--fg-dim);
+      padding: 0.3rem 0.8rem;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .output-tabs .otab.active {
+      color: var(--fg);
+      background: var(--bg);
+      box-shadow: inset 0 -2px 0 var(--accent);
+    }
+    .output-tabs .otab.has-errors {
+      color: var(--err);
+    }
+    .output-tabs .otab.has-errors::after {
+      content: " ●";
+      font-size: 0.7rem;
+    }
+    .output-stack {
+      position: relative;
+      background: var(--bg-2);
+      overflow: hidden;
+      min-height: 6rem;
+    }
+    .output-stack .otab-body {
+      position: absolute;
+      inset: 0;
+    }
+    .output-stack .otab-body.hidden { display: none; }
+    #diagBody .diag-row {
+      cursor: pointer;
+      padding: 0.15rem 0;
+    }
+    #diagBody .diag-row:hover { background: var(--bg-3, #2a2a2a); }
+    #diagBody .diag-loc { color: var(--accent); }
+    #diagBody .diag-fn  { color: var(--fg-dim); }
+    #diagBody .diag-msg { color: var(--err); }
+    #crashBody .cr-section {
+      color: var(--accent);
+      font-weight: 600;
+      margin-top: 0.7rem;
+    }
+    #crashBody .cr-row { padding-left: 1rem; }
+    #memBody {
+      display: flex;
+      flex-direction: column;
+      padding: 0;
+    }
+    /* ID specificity of #memBody { display:flex } beats the shared
+       .otab-body.hidden { display:none } rule, so the tab body would
+       stay visible when other tabs are active. Re-assert hidden at
+       ID specificity. */
+    #memBody.hidden { display: none; }
+    .mem-controls {
+      flex: 0 0 auto;
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+      padding: 0.35rem 0.6rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg);
+      font-size: 0.75rem;
+      flex-wrap: wrap;
+    }
+    .mem-controls select,
+    .mem-controls input,
+    .mem-controls button {
+      font: inherit;
+      background: var(--bg-2);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      padding: 0.15rem 0.4rem;
+      border-radius: 2px;
+    }
+    .mem-controls .mem-info { color: var(--fg-dim); margin-left: auto; }
+    #memDump {
+      margin: 0;
+      flex: 1;
+      overflow: auto;
+      padding: 0.5rem 0.6rem;
+      font-family: "Intel One Mono", ui-monospace, monospace;
+      font-size: 0.78rem;
+      white-space: pre;
+      background: var(--bg-2);
+      color: var(--fg);
+    }
+    #memDump .mem-marker { color: var(--accent); font-weight: 600; }
+    #memDump .mem-addr { color: var(--fg-dim); }
+    #memDump .mem-zero { color: var(--fg-dim); }
+    #memDump .mem-gname { color: var(--accent); font-style: italic; }
+    [data-theme="light"] #memDump .mem-gname { color: var(--vc6-sel); }
+    .canvas-cell {
+      display: none;
+      grid-row: 1 / span 2;
+      grid-column: 3;
+      background: var(--bg-2);
+      align-items: center;
+      justify-content: center;
+      padding: 0.5rem;
+      overflow: auto;
+    }
+    .output-pane.with-canvas .canvas-cell { display: flex; }
+    .canvas-cell {
+      position: relative;
+    }
+    #sdlCanvas {
+      background: #000;
+      max-width: 100%;
+      max-height: 100%;
+      image-rendering: auto;     /* set to `pixelated` for retro chunky look */
+    }
+    #sdlCanvas:fullscreen {
+      width: 100vw;
+      height: 100vh;
+      max-width: none;
+      max-height: none;
+    }
+    .canvas-fs-btn {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      padding: 0.15rem 0.45rem;
+      background: rgba(0,0,0,0.55);
+      color: #fff;
+      border: 1px solid rgba(255,255,255,0.3);
+      border-radius: 3px;
+      font: 11px "Intel One Mono", ui-monospace, monospace;
+      cursor: pointer;
+      z-index: 1;
+    }
+    .canvas-fs-btn:hover { background: rgba(0,0,0,0.8); }
+
+    code {
+      background: rgba(128,128,128,0.15);
+      padding: 0 0.25rem;
+      border-radius: 3px;
+      font-family: "Intel One Mono", ui-monospace, monospace;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>BCPL &rarr; WebAssembly</h1>
+    <span class="sub">
+      BCPL by
+      <a href="https://www.cl.cam.ac.uk/~mr10/" target="_blank" rel="noopener noreferrer">Martin Richards</a>.
+      &nbsp;
+      <a href="https://github.com/keyboardspecialist/bcplwasm" target="_blank" rel="noopener noreferrer">source on GitHub</a>
+      &nbsp;
+      <span id="buildTag" style="font-family: "Intel One Mono", ui-monospace, monospace;"></span>
+    </span>
+    <span class="ws-bar" id="wsBar" style="margin-left:auto;display:flex;align-items:center;gap:0.35rem;">
+      <label class="sub" style="font-size:0.75rem;color:var(--fg-dim);">workspace:</label>
+      <select id="wsSelect" title="active workspace"></select>
+      <button id="wsNew"    title="new workspace">+</button>
+      <button id="wsRename" title="rename current workspace">rename</button>
+      <button id="wsDelete" title="delete current workspace">−</button>
+      <button id="wsExport" title="download workspace (.bcplws)">export</button>
+      <button id="wsImport" title="import workspace from .bcplws">import</button>
+      <input  id="wsImportFile" type="file" accept=".bcplws,.bcplproj,.json" style="display:none">
+    </span>
+    <button class="theme-toggle" id="themeToggle" title="Toggle light/dark theme">☀︎</button>
+  </header>
+
+  <!-- Top command strip: build + run controls for the active workspace. -->
+  <nav class="cmd-strip" id="cmdStrip">
+    <select id="cDialect" title="C compiler dialect (the entry file is .c)" style="display:none">
+      <option value="1120">C: last1120 (1972)</option>
+      <option value="prestruct">C: prestruct (1973)</option>
+    </select>
+    <button id="compileRun"   class="primary" title="compile all + run">▶ Compile &amp; Run</button>
+    <button id="compileOnly"  title="compile without running (re-uses bytes on next Run)">Compile</button>
+    <button id="runOnly"      title="run the last compiled program (no recompile)" disabled>Run</button>
+    <button id="stopRun"      disabled title="stop the running program">Stop</button>
+    <button id="continueRun"  disabled title="continue from breakpoint" style="display:none">Continue</button>
+    <button id="stepRun"      disabled title="step one statement" style="display:none">Step</button>
+    <span class="cmd-sep"></span>
+    <button id="shareLink"    title="copy share URL of current file">Share link</button>
+    <button id="dbgMode"
+            class="toggle-btn"
+            type="button"
+            aria-pressed="false"
+            title="toggle debug mode — breakpoints + post-mortem pause (slower, forces asyncify on every module)">
+      Debug mode
+    </button>
+    <span id="entryBadge" class="entry-badge"
+          title="compile entry — click the ☆ next to a .b file in the Files pane to change"></span>
+    <span id="compileStatus" class="compile-status"></span>
+  </nav>
+
+  <div class="workspace">
+    <!-- LEFT PANE -->
+    <aside class="left-pane">
+      <nav class="tabs" id="leftTabs">
+        <button class="tab active" data-tab="files">Files</button>
+        <button class="tab"        data-tab="assets">Assets</button>
+        <button class="tab"        data-tab="examples">Examples</button>
+        <button class="tab"        data-tab="api">API</button>
+      </nav>
+
+      <div class="tab-body" id="tab-files">
+        <ul id="fileList" class="file-list"></ul>
+        <div class="file-actions">
+          <button id="addFile">+ file</button>
+          <button id="renameFile">rename</button>
+        </div>
+        <div class="file-hint">
+          Click the ☆ next to a .b file to mark it as the compile entry.
+        </div>
+      </div>
+
+      <div class="tab-body hidden" id="tab-assets">
+        <ul id="assetList" class="file-list"></ul>
+        <div class="file-actions">
+          <button id="addAsset">+ asset</button>
+          <input id="assetFile" type="file" style="display:none">
+        </div>
+        <div class="file-actions" style="color: var(--fg-dim); font-size: 0.72rem; line-height:1.35;">
+          PNG/JPEG/etc. decoded to RGBA; any other file kept as raw
+          bytes (WAD, .bin, etc.). Reach from BCPL via
+          <code>sys(Sys_assetload, "name", info_vec)</code> —
+          <code>info!1 = 0</code> signals a binary blob and
+          <code>info!0</code> holds its byte length.
+        </div>
+      </div>
+
+      <div class="tab-body hidden" id="tab-examples">
+        <ul id="exampleList" class="example-list"></ul>
+        <div class="file-actions" style="color: var(--fg-dim); font-size: 0.75rem;">
+          click to preview in the editor pane
+        </div>
+      </div>
+
+      <div class="tab-body hidden" id="tab-api">
+        <input id="apiFilter" class="api-filter" placeholder="filter (name)…">
+        <ul id="apiList" class="api-list"></ul>
+        <div class="api-detail" id="apiDetail">
+          <div class="desc">Select a function to see its signature and description.</div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- RIGHT PANE -->
+    <main class="right-pane">
+      <nav class="tabs source-tabs" id="sourceTabs"></nav>
+      <div class="preview-note" id="previewNote">
+        <div id="previewMeta" style="flex:1;"></div>
+        <button id="prevLesson" title="previous lesson">◀</button>
+        <button id="nextLesson" title="next lesson">▶</button>
+        <button id="savePreview">Save as file</button>
+      </div>
+      <div class="editor-host">
+        <div class="editor-wrap" id="editorWrap">
+          <div class="gutter" id="editorGutter">1
+</div>
+          <div class="hl-wrap">
+            <div class="err-bands" id="errBands"></div>
+            <pre class="hl" id="editorHl"></pre>
+            <textarea id="userSrc" spellcheck="false"
+              autocorrect="off" autocapitalize="off" autocomplete="off"
+              wrap="off"></textarea>
+          </div>
+        </div>
+        <pre id="liveWat">(not yet compiled)</pre>
+        <div id="wasmView" style="display:none">
+          <div class="wasm-header" id="wasmHeader">(no wasm built yet)</div>
+          <details class="wasm-disasm" id="wasmDisasmWrap">
+            <summary>full disassembly</summary>
+            <pre id="wasmDisasm">(not yet compiled)</pre>
+          </details>
+        </div>
+      </div>
+    </main>
+
+    <!-- OUTPUT / STDIN / GRAPHICS -->
+    <section class="output-pane" id="outputPane">
+      <button id="outputCollapse" class="collapse-btn"
+              title="collapse output pane">▾</button>
+      <div class="output-tabs" id="outputTabs">
+        <button class="otab active" data-otab="output">Output</button>
+        <button class="otab"        data-otab="diag" id="diagTabBtn">Diagnostics</button>
+        <button class="otab"        data-otab="crash" id="crashTabBtn">Crash</button>
+        <button class="otab"        data-otab="mem" id="memTabBtn">Memory</button>
+      </div>
+      <div class="pane-header">Stdin (consumed by rdch)</div>
+      <div class="output-stack">
+        <pre id="output"   class="otab-body"></pre>
+        <pre id="diagBody" class="otab-body hidden"></pre>
+        <pre id="crashBody" class="otab-body hidden"></pre>
+        <div id="memBody" class="otab-body hidden">
+          <div class="mem-controls">
+            <select id="memRegion">
+              <option value="globals">Globals (G!1..G!300)</option>
+              <option value="static">Static data</option>
+              <option value="stack">Stack window @ P</option>
+              <option value="heap">Heap top</option>
+              <option value="custom">Custom range</option>
+            </select>
+            <label>start <input id="memStart" type="number" value="1" min="0" style="width:6rem"></label>
+            <label>words <input id="memCount" type="number" value="64" min="1" max="2048" style="width:5rem"></label>
+            <button id="memRefresh">Refresh</button>
+            <input id="memGlobFilter" type="text"
+                   placeholder="filter globals…"
+                   style="width:9rem"
+                   title="case-insensitive: matches G!N or libhdr name (substring)">
+            <span id="memInfo" class="mem-info"></span>
+          </div>
+          <pre id="memDump"></pre>
+        </div>
+      </div>
+      <textarea id="stdin" spellcheck="false" placeholder="type input here before Compile &amp; Run"></textarea>
+      <div class="canvas-cell" id="canvasCell">
+        <button id="canvasFullscreen" class="canvas-fs-btn" title="toggle fullscreen">⛶</button>
+        <canvas id="sdlCanvas" width="320" height="240"></canvas>
+      </div>
+    </section>
+  </div>
+
+  <script type="module">
+    // Museum: C language support (the two 1972 C compilers, built to wasm).
+    import { compileC, makeCRuntime, C_EXAMPLES } from "./lang-c.mjs";
+    const V = Date.now();
+    // Build tag in header — derived from the page's last-modified
+    // header (server-side mtime). If the browser served a cached
+    // response, the time shown reflects the CACHED page's mtime, so
+    // it doubles as a "did my reload actually pick up changes?"
+    // indicator. Click to copy timestamp.
+    {
+      const tag = document.getElementById("buildTag");
+      const lm  = new Date(document.lastModified || Date.now());
+      const pad = (n) => String(n).padStart(2, "0");
+      const txt = `build ${lm.getFullYear()}-${pad(lm.getMonth()+1)}-${pad(lm.getDate())} ` +
+                  `${pad(lm.getHours())}:${pad(lm.getMinutes())}:${pad(lm.getSeconds())}`;
+      tag.textContent = txt;
+      tag.title = "page last-modified — bump on reload to verify cache busted";
+    }
+    const { BcplRuntime, storageBackend } = await import(`./runtime.js?v=${V}`);
+    const { slots, aliases } = await import(`./stdlib-manifest.mjs?v=${V}`);
+    const { API_DOCS } = await import(`./api-docs.mjs?v=${V}`);
+    const { parseLibhdrText } = await import(`./parse-libhdr.mjs?v=${V}`);
+
+    // Build gnum → name map from libhdr.h so the Memory tab can
+    // annotate each global slot with its BCPL name. Loaded lazily
+    // (one fetch) and cached forever.
+    let gnumToNamePromise = null;
+    function getGnumToName() {
+      if (!gnumToNamePromise) {
+        gnumToNamePromise = (async () => {
+          const txt = await (await fetch(`headers/libhdr.h?v=${V}`)).text();
+          const nameToGnum = parseLibhdrText(txt);
+          const inv = new Map();
+          for (const [name, gn] of nameToGnum) {
+            // Multiple names can share a gnum (aliases like
+            // unhold/release: 159). Concat with /.
+            const prev = inv.get(gn);
+            inv.set(gn, prev ? `${prev}/${name}` : name);
+          }
+          return inv;
+        })();
+      }
+      return gnumToNamePromise;
+    }
+    // Warm the cache early so renderMemDump is sync-fast.
+    let gnumToName = new Map();
+    getGnumToName().then(m => { gnumToName = m; });
+    const { TRACK, LEVELS, BY_SLUG, nextSlug, prevSlug } =
+      await import(`./tutorial.mjs?v=${V}`);
+
+    // Extras: examples not part of the tutorial track (e.g. stdlib demo).
+    const EXTRAS = ["stdlib"];
+
+    // ------------------ DOM refs ------------------
+    const fileListEl    = document.getElementById("fileList");
+    const exampleListEl = document.getElementById("exampleList");
+    const apiListEl     = document.getElementById("apiList");
+    const apiFilterEl   = document.getElementById("apiFilter");
+    const apiDetailEl   = document.getElementById("apiDetail");
+    const sourceTabsEl  = document.getElementById("sourceTabs");
+    const userSrcEl     = document.getElementById("userSrc");
+    const editorWrapEl  = document.getElementById("editorWrap");
+    const editorGutterEl= document.getElementById("editorGutter");
+    const editorHlEl    = document.getElementById("editorHl");
+    const themeToggleEl = document.getElementById("themeToggle");
+    const liveWatEl     = document.getElementById("liveWat");
+    const wasmViewEl    = document.getElementById("wasmView");
+    const wasmHeaderEl  = document.getElementById("wasmHeader");
+    const wasmDisasmEl  = document.getElementById("wasmDisasm");
+    const previewNoteEl = document.getElementById("previewNote");
+    const previewMetaEl = document.getElementById("previewMeta");
+    const prevLessonBtn = document.getElementById("prevLesson");
+    const nextLessonBtn = document.getElementById("nextLesson");
+    const savePreviewBtn = document.getElementById("savePreview");
+    const outputEl      = document.getElementById("output");
+    const diagBodyEl    = document.getElementById("diagBody");
+    const crashBodyEl   = document.getElementById("crashBody");
+    const memBodyEl     = document.getElementById("memBody");
+    const memDumpEl     = document.getElementById("memDump");
+    const memRegionEl   = document.getElementById("memRegion");
+    const memStartEl    = document.getElementById("memStart");
+    const memCountEl    = document.getElementById("memCount");
+    const memRefreshEl  = document.getElementById("memRefresh");
+    const memGlobFilterEl = document.getElementById("memGlobFilter");
+    const memInfoEl     = document.getElementById("memInfo");
+    const diagTabBtnEl  = document.getElementById("diagTabBtn");
+    const crashTabBtnEl = document.getElementById("crashTabBtn");
+    const memTabBtnEl   = document.getElementById("memTabBtn");
+    const outputTabsEl  = document.getElementById("outputTabs");
+    const stdinEl       = document.getElementById("stdin");
+
+    // Museum language state (declared early so commitActiveEdit can consult it).
+    // Museum: language follows the file extension. The entry file's extension
+    // picks the compiler (.c -> C, else BCPL); the C dialect is a separate
+    // compiler option chosen via #cDialect.
+    const langOf = (name) => (name && name.endsWith(".c") ? "c" : "bcpl");
+    const isCompilable = (name) => name.endsWith(".b") || name.endsWith(".c");
+    function entryFile() {
+      const src = files.filter((f) => isCompilable(f.name));
+      return src.find((f) => f.entry) || src[0] || null;
+    }
+    const entryIsC = () => { const e = entryFile(); return !!e && langOf(e.name) === "c"; };
+    const cDialect = () => document.getElementById("cDialect").value || "1120";
+    const compileBtn    = document.getElementById("compileRun");
+    const compileOnlyBtn= document.getElementById("compileOnly");
+    const runOnlyBtn    = document.getElementById("runOnly");
+    const stopBtn       = document.getElementById("stopRun");
+    const continueBtn   = document.getElementById("continueRun");
+    const stepBtn       = document.getElementById("stepRun");
+    // Debug-mode toggle button. Replaced the old checkbox so the
+    // control matches the rest of the cmd-strip visually. We expose a
+    // .checked accessor so the existing call sites that read/write
+    // dbgModeEl.checked don't need to change. Press state is mirrored
+    // to aria-pressed (+ .on class for CSS styling).
+    const dbgModeBtn = document.getElementById("dbgMode");
+    const dbgModeEl = {
+      get checked() { return dbgModeBtn.classList.contains("on"); },
+      set checked(v) {
+        const on = !!v;
+        dbgModeBtn.classList.toggle("on", on);
+        dbgModeBtn.setAttribute("aria-pressed", on ? "true" : "false");
+      },
+      addEventListener(type, fn) {
+        // Only "change" is used in the rest of the file. We toggle
+        // first so handlers see the NEW state via .checked, matching
+        // the checkbox's natural ordering.
+        if (type === "change") {
+          dbgModeBtn.addEventListener("click", (e) => {
+            dbgModeEl.checked = !dbgModeEl.checked;
+            fn(e);
+          });
+        }
+      },
+    };
+    let   currentRt     = null;   // BcplRuntime of the active program, if any
+    const statusEl      = document.getElementById("compileStatus");
+    const entryBadgeEl  = document.getElementById("entryBadge");
+
+    // ------------------ Left-pane tab switching ------------------
+    function bindLeftTabs() {
+      const strip = document.getElementById("leftTabs");
+      strip.addEventListener("click", (e) => {
+        const btn = e.target.closest(".tab");
+        if (!btn) return;
+        strip.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+        btn.classList.add("active");
+        const key = btn.getAttribute("data-tab");
+        document.querySelectorAll(`[id^="tab-"]`).forEach(el => {
+          el.classList.toggle("hidden", el.id !== "tab-" + key);
+        });
+      });
+    }
+    bindLeftTabs();
+
+    // ------------------ Output-pane tab switching ------------------
+    function activateOutputTab(key) {
+      outputTabsEl.querySelectorAll(".otab").forEach(t => {
+        t.classList.toggle("active", t.getAttribute("data-otab") === key);
+      });
+      const m = {
+        output: outputEl, diag: diagBodyEl,
+        crash: crashBodyEl, mem: memBodyEl,
+      };
+      for (const [k, el] of Object.entries(m)) {
+        el.classList.toggle("hidden", k !== key);
+      }
+      if (key === "mem") refreshMemory();
+    }
+    outputTabsEl.addEventListener("click", (e) => {
+      const btn = e.target.closest(".otab");
+      if (!btn) return;
+      activateOutputTab(btn.getAttribute("data-otab"));
+    });
+    diagBodyEl.textContent = "no compile errors";
+    crashBodyEl.textContent = "no crash";
+    memDumpEl.textContent = "no runtime loaded yet — Compile & Run first";
+
+    // ------------------ Files tab ------------------
+    const FILES_LS_KEY = "bcpl-playground-files-v1";
+    const DEFAULT_FILES = [
+      {
+        name: "main.b",
+        entry: true,
+        content: `GET "libhdr"
+
+LET start() = VALOF
+{ writef("hello from self-hosted bcplwasm!*n")
+  RESULTIS 0
+}
+`,
+      },
+    ];
+    // Initial value set here is a placeholder; the real load happens
+    // after WS_FILES_KEY / wsActive are declared further down (the
+    // workspace block is defined later in the script). See the
+    // `files = loadFiles()` reassignment below the wsMigrateLegacy call.
+    let files = structuredClone(DEFAULT_FILES);
+
+    // ------------------ Source-tab bar state ------------------
+    // Each entry in sourceTabs describes one tab on the right pane:
+    //   { kind: 'file',    fileIdx: n }
+    //   { kind: 'preview', name, content }
+    //   { kind: 'wat' }               (singleton, always last)
+    // activeTab is the index within sourceTabs. Clicking a file in
+    // the left Files tab opens (or focuses) its sourceTab. Clicking
+    // an example opens a preview sourceTab.
+    let sourceTabs = [];
+    let activeTab = 0;
+    function rebuildSourceTabs(preserve = true) {
+      // Keep preview + wat tabs; rebuild file tabs to match `files`.
+      const kept = sourceTabs.filter(t => t.kind !== "file");
+      const prev = sourceTabs[activeTab];
+      sourceTabs = files.map((_, i) => ({ kind: "file", fileIdx: i }))
+                       .concat(kept);
+      if (!sourceTabs.some(t => t.kind === "wat")) {
+        sourceTabs.push({ kind: "wat" });
+      }
+      if (!sourceTabs.some(t => t.kind === "wasm")) {
+        sourceTabs.push({ kind: "wasm" });
+      }
+      // Try to preserve active selection.
+      if (preserve && prev) {
+        const idx = sourceTabs.findIndex(t =>
+          (t.kind === prev.kind) &&
+          (t.fileIdx === prev.fileIdx) &&
+          (t.name === prev.name));
+        activeTab = idx >= 0 ? idx : 0;
+      } else {
+        activeTab = 0;
+      }
+      renderSourceTabs();
+      showActive();
+    }
+    function renderSourceTabs() {
+      sourceTabsEl.innerHTML = "";
+      sourceTabs.forEach((t, i) => {
+        const btn = document.createElement("button");
+        btn.className = "tab" + (i === activeTab ? " active" : "");
+        let label = "";
+        if (t.kind === "file") {
+          const f = files[t.fileIdx];
+          if (!f) return;
+          label = f.name;
+          if (f.entry) btn.classList.add("entry");
+        } else if (t.kind === "preview") {
+          label = `${t.name} (preview)`;
+          btn.classList.add("preview");
+        } else if (t.kind === "wat") {
+          label = "WAT";
+          btn.classList.add("wat-tab");
+        } else if (t.kind === "wasm") {
+          label = "Wasm";
+          btn.classList.add("wat-tab");
+        }
+        const span = document.createElement("span");
+        span.textContent = label;
+        span.onclick = () => { activeTab = i; renderSourceTabs(); showActive(); };
+        btn.appendChild(span);
+        // Close button only for preview tabs.
+        if (t.kind === "preview") {
+          const close = document.createElement("button");
+          close.className = "close";
+          close.textContent = "×";
+          close.title = "close preview";
+          close.onclick = (e) => {
+            e.stopPropagation();
+            sourceTabs.splice(i, 1);
+            if (activeTab >= sourceTabs.length) activeTab = sourceTabs.length - 1;
+            if (activeTab < 0) activeTab = 0;
+            renderSourceTabs(); showActive();
+          };
+          btn.appendChild(close);
+        }
+        sourceTabsEl.appendChild(btn);
+      });
+    }
+    function showActive() {
+      const t = sourceTabs[activeTab];
+      if (!t) return;
+      if (t.kind === "file") {
+        const f = files[t.fileIdx];
+        setEditorContent(f?.content ?? "");
+        userSrcEl.readOnly = false;
+        editorWrapEl.classList.remove("is-readonly");
+        editorWrapEl.style.display = "flex";
+        liveWatEl.style.display = "none";
+        wasmViewEl.style.display = "none";
+        liveWatEl.style.display = "none";
+        previewNoteEl.classList.remove("visible");
+      } else if (t.kind === "preview") {
+        setEditorContent(t.content);
+        userSrcEl.readOnly = true;
+        editorWrapEl.classList.add("is-readonly");
+        editorWrapEl.style.display = "flex";
+        liveWatEl.style.display = "none";
+        wasmViewEl.style.display = "none";
+        renderPreviewMeta(t.name);
+        previewNoteEl.classList.add("visible");
+      } else if (t.kind === "wat") {
+        editorWrapEl.style.display = "none";
+        liveWatEl.style.display = "block";
+        wasmViewEl.style.display = "none";
+        previewNoteEl.classList.remove("visible");
+      } else if (t.kind === "wasm") {
+        editorWrapEl.style.display = "none";
+        liveWatEl.style.display = "none";
+        wasmViewEl.style.display = "block";
+        previewNoteEl.classList.remove("visible");
+        renderWasmView();
+      }
+      // Sync left Files list highlight.
+      renderFileList();
+    }
+    function openFileTab(fileIdx) {
+      const existing = sourceTabs.findIndex(t =>
+        t.kind === "file" && t.fileIdx === fileIdx);
+      if (existing >= 0) {
+        activeTab = existing;
+      } else {
+        // Insert just before WAT tab.
+        const watPos = sourceTabs.findIndex(t => t.kind === "wat");
+        const at = watPos >= 0 ? watPos : sourceTabs.length;
+        sourceTabs.splice(at, 0, { kind: "file", fileIdx });
+        activeTab = at;
+      }
+      renderSourceTabs(); showActive();
+    }
+    function openPreviewTab(name, content) {
+      const existing = sourceTabs.findIndex(t =>
+        t.kind === "preview" && t.name === name);
+      if (existing >= 0) {
+        sourceTabs[existing].content = content;
+        activeTab = existing;
+      } else {
+        const watPos = sourceTabs.findIndex(t => t.kind === "wat");
+        const at = watPos >= 0 ? watPos : sourceTabs.length;
+        sourceTabs.splice(at, 0, { kind: "preview", name, content });
+        activeTab = at;
+      }
+      renderSourceTabs(); showActive();
+    }
+    // Silent promote: convert the active preview tab into a real
+    // file in the workspace. Returns the new file index, or -1 if the
+    // active tab isn't a preview. Name-collision policy: if the file
+    // already exists, drop the preview and switch to the existing
+    // tab (don't clobber the user's edited copy). Used by the edit
+    // handler and the compile path so previews opened via the
+    // Examples list survive a refresh once the user interacts.
+    function promoteActivePreviewIfAny() {
+      const t = sourceTabs[activeTab];
+      if (!t || t.kind !== "preview") return -1;
+      const fileName = `${t.name}.b`;
+      let idx = files.findIndex(f => f.name === fileName);
+      if (idx < 0) {
+        // New file. Make it the entry if none already chosen.
+        const haveEntry = files.some(f => f.entry);
+        files.push({
+          name: fileName, entry: !haveEntry, content: t.content,
+        });
+        idx = files.length - 1;
+      }
+      // Drop the preview tab and open the file tab in its place.
+      sourceTabs.splice(activeTab, 1);
+      openFileTab(idx);
+      renderFileList();
+      persistFiles();
+      invalidateLastBuilt();
+      return idx;
+    }
+
+    async function promotePreview() {
+      const t = sourceTabs[activeTab];
+      if (!t || t.kind !== "preview") return;
+      const fileName = `${t.name}.b`;
+      if (files.some(f => f.name === fileName)) {
+        if (!confirm(`"${fileName}" already exists — overwrite?`)) return;
+      }
+      const existing = files.findIndex(f => f.name === fileName);
+      if (existing >= 0) {
+        files[existing].content = t.content;
+      } else {
+        // First .b file in an empty workspace claims entry automatically.
+        const haveEntry = files.some(f => f.entry);
+        files.push({ name: fileName, entry: !haveEntry, content: t.content });
+      }
+      // Close the preview, focus the resulting file tab.
+      sourceTabs.splice(activeTab, 1);
+      rebuildSourceTabs(false);
+      const newFileIdx = files.findIndex(f => f.name === fileName);
+      openFileTab(newFileIdx);
+      renderFileList();
+      await saveCurrentWorkspace();
+      invalidateLastBuilt();
+    }
+
+    // ---------- Workspaces (named, switchable) ----------
+    //
+    // localStorage layout:
+    //   bcpl-ws:list     JSON array of workspace names
+    //   bcpl-ws:active   string — currently-loaded workspace name
+    //   bcpl-ws:<name>:files   JSON files array
+    //   bcpl-ws:<name>:assets  JSON assetBackend.serialise() output
+    //
+    // Legacy single-workspace data (FILES_LS_KEY) is migrated on first
+    // load into a workspace called "default".
+    const WS_LIST_KEY   = "bcpl-ws:list";
+    const WS_ACTIVE_KEY = "bcpl-ws:active";
+    const WS_FILES_KEY  = (n) => `bcpl-ws:${n}:files`;
+    const WS_ASSETS_KEY = (n) => `bcpl-ws:${n}:assets`;
+
+    function wsList() {
+      try {
+        const raw = localStorage.getItem(WS_LIST_KEY);
+        if (raw) {
+          const arr = JSON.parse(raw);
+          if (Array.isArray(arr) && arr.length) return arr;
+        }
+      } catch {}
+      return [];
+    }
+    function wsSetList(arr) {
+      try { localStorage.setItem(WS_LIST_KEY, JSON.stringify(arr)); } catch {}
+    }
+    function wsActive() {
+      return localStorage.getItem(WS_ACTIVE_KEY) || "default";
+    }
+    function wsSetActive(name) {
+      try { localStorage.setItem(WS_ACTIVE_KEY, name); } catch {}
+    }
+    function wsMigrateLegacy() {
+      // First-run migration: if the old FILES_LS_KEY has data and no
+      // workspace list exists, move it under "default".
+      if (wsList().length > 0) return;
+      let legacy = null;
+      try { legacy = localStorage.getItem(FILES_LS_KEY); } catch {}
+      if (legacy) {
+        try {
+          localStorage.setItem(WS_FILES_KEY("default"), legacy);
+          localStorage.removeItem(FILES_LS_KEY);
+        } catch {}
+      }
+      wsSetList(["default"]);
+      wsSetActive("default");
+    }
+    wsMigrateLegacy();
+    // Now that WS_FILES_KEY / wsActive are bound, do the real workspace
+    // load. The placeholder DEFAULT_FILES set up top is replaced here.
+    // Before this fix the initial load at the top of the script hit a
+    // TDZ ReferenceError on WS_FILES_KEY, got swallowed by loadFiles'
+    // try/catch, and silently returned DEFAULT — so workspace state
+    // never survived a reload.
+    files = loadFiles();
+
+    function loadFiles() {
+      try {
+        const raw = localStorage.getItem(WS_FILES_KEY(wsActive()));
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length) return parsed;
+        }
+      } catch {}
+      return structuredClone(DEFAULT_FILES);
+    }
+    function persistFiles() {
+      try {
+        localStorage.setItem(WS_FILES_KEY(wsActive()), JSON.stringify(files));
+      } catch {}
+    }
+    async function persistAssetsForActive() {
+      const { assetBackend } = await import(`./runtime.js?v=${V}`);
+      try {
+        localStorage.setItem(WS_ASSETS_KEY(wsActive()),
+                             JSON.stringify(assetBackend.serialise()));
+      } catch {}
+    }
+    async function loadAssetsForActive() {
+      const { assetBackend } = await import(`./runtime.js?v=${V}`);
+      assetBackend.clear();
+      try {
+        const raw = localStorage.getItem(WS_ASSETS_KEY(wsActive()));
+        if (raw) assetBackend.deserialise(JSON.parse(raw));
+      } catch {}
+    }
+
+    // ---------- Workspace switcher actions ----------
+    function renderWsSelect() {
+      const sel = document.getElementById("wsSelect");
+      if (!sel) return;
+      const names = wsList();
+      const active = wsActive();
+      sel.innerHTML = "";
+      for (const n of names) {
+        const o = document.createElement("option");
+        o.value = n; o.textContent = n;
+        if (n === active) o.selected = true;
+        sel.appendChild(o);
+      }
+    }
+
+    async function saveCurrentWorkspace() {
+      commitActiveEdit();
+      persistFiles();
+      await persistAssetsForActive();
+    }
+
+    async function switchWorkspace(name) {
+      if (!wsList().includes(name)) return;
+      await saveCurrentWorkspace();
+      wsSetActive(name);
+      files = loadFiles();
+      sourceTabs = [];
+      activeTab  = 0;
+      await loadAssetsForActive();
+      rebuildSourceTabs(false);
+      renderAssetList();
+      renderWsSelect();
+      // Workspaces have independent sources; last build is stale.
+      invalidateLastBuilt();
+    }
+
+    async function wsCreate(name) {
+      const trimmed = (name || "").trim();
+      if (!trimmed) return null;
+      const list = wsList();
+      if (list.includes(trimmed)) { alert(`Workspace "${trimmed}" already exists.`); return null; }
+      list.push(trimmed);
+      wsSetList(list);
+      // Seed empty workspace state.
+      try {
+        localStorage.setItem(WS_FILES_KEY(trimmed),
+                             JSON.stringify(structuredClone(DEFAULT_FILES)));
+        localStorage.setItem(WS_ASSETS_KEY(trimmed), JSON.stringify({}));
+      } catch {}
+      await switchWorkspace(trimmed);
+      return trimmed;
+    }
+
+    async function wsDelete(name) {
+      const list = wsList();
+      if (list.length <= 1) { alert("Can't delete the last workspace."); return; }
+      if (!list.includes(name)) return;
+      if (!confirm(`Delete workspace "${name}"? Files + assets in it are gone.`)) return;
+      try {
+        localStorage.removeItem(WS_FILES_KEY(name));
+        localStorage.removeItem(WS_ASSETS_KEY(name));
+      } catch {}
+      const next = list.filter(n => n !== name);
+      wsSetList(next);
+      if (wsActive() === name) {
+        wsSetActive(next[0]);
+        files = loadFiles();
+        sourceTabs = [];
+        activeTab = 0;
+        await loadAssetsForActive();
+        rebuildSourceTabs(false);
+        renderAssetList();
+      }
+      renderWsSelect();
+    }
+
+    async function wsRename(oldName, newName) {
+      const trimmed = (newName || "").trim();
+      if (!trimmed || trimmed === oldName) return;
+      const list = wsList();
+      if (!list.includes(oldName)) return;
+      if (list.includes(trimmed)) { alert(`Workspace "${trimmed}" already exists.`); return; }
+      try {
+        const f = localStorage.getItem(WS_FILES_KEY(oldName));
+        const a = localStorage.getItem(WS_ASSETS_KEY(oldName));
+        if (f !== null) localStorage.setItem(WS_FILES_KEY(trimmed), f);
+        if (a !== null) localStorage.setItem(WS_ASSETS_KEY(trimmed), a);
+        localStorage.removeItem(WS_FILES_KEY(oldName));
+        localStorage.removeItem(WS_ASSETS_KEY(oldName));
+      } catch {}
+      const next = list.map(n => (n === oldName ? trimmed : n));
+      wsSetList(next);
+      if (wsActive() === oldName) wsSetActive(trimmed);
+      renderWsSelect();
+    }
+
+    async function wsExportCurrent() {
+      await saveCurrentWorkspace();
+      const { assetBackend } = await import(`./runtime.js?v=${V}`);
+      const name = wsActive();
+      const payload = {
+        version: 2,
+        kind: "bcpl-workspace",
+        name,
+        exported: new Date().toISOString(),
+        files: files.map(f => ({ name: f.name, entry: !!f.entry, content: f.content ?? "" })),
+        assets: assetBackend.serialise(),
+      };
+      const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
+      const url  = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `${name}.bcplws`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    async function wsImportFromFile(file) {
+      try {
+        const text = await file.text();
+        const obj = JSON.parse(text);
+        if (!Array.isArray(obj.files)) throw new Error("missing files[]");
+        let target = (obj.name || file.name.replace(/\.[^.]+$/, "")).trim() || "imported";
+        const list = wsList();
+        // Avoid clobbering: if name taken, suffix (2), (3)...
+        if (list.includes(target)) {
+          let i = 2;
+          while (list.includes(`${target} (${i})`)) i++;
+          target = `${target} (${i})`;
+        }
+        list.push(target);
+        wsSetList(list);
+        // Persist incoming files + assets under the new name.
+        localStorage.setItem(WS_FILES_KEY(target),
+                             JSON.stringify(obj.files.map(f => ({
+                               name: f.name, entry: !!f.entry, content: f.content ?? "" }))));
+        localStorage.setItem(WS_ASSETS_KEY(target),
+                             JSON.stringify(obj.assets ?? {}));
+        await switchWorkspace(target);
+      } catch (e) {
+        alert(`Import failed: ${e.message ?? e}`);
+      }
+    }
+    // Return the file-index of the currently-active file tab, or -1 if
+    // the active tab is a preview/WAT.
+    function activeFileIdx() {
+      const t = sourceTabs[activeTab];
+      return (t && t.kind === "file") ? t.fileIdx : -1;
+    }
+    function commitActiveEdit() {
+      const i = activeFileIdx();
+      if (i >= 0) files[i].content = userSrcEl.value;
+    }
+    function renderFileList() {
+      fileListEl.innerHTML = "";
+      const activeFile = activeFileIdx();
+      files.forEach((f, i) => {
+        const li = document.createElement("li");
+        if (i === activeFile) li.classList.add("active");
+        // Leading star — click to make this file the compile entry.
+        // Compilable files (.b BCPL, .c C) can be entry; .h rows get a
+        // placeholder (hidden, but reserves the column so names line up).
+        const star = document.createElement("button");
+        const isSrc = isCompilable(f.name);
+        if (isSrc) {
+          star.className = "entry-star" + (f.entry ? " on" : "");
+          star.textContent = f.entry ? "★" : "☆";
+          star.title = f.entry
+            ? `${f.name} is the compile entry`
+            : `make ${f.name} the compile entry`;
+          star.onclick = (e) => { e.stopPropagation(); setEntryByIdx(i); };
+        } else {
+          star.className = "entry-star placeholder";
+          star.textContent = "·";
+          star.tabIndex = -1;
+        }
+        li.appendChild(star);
+        const name = document.createElement("span");
+        name.className = "name" + (f.entry ? " entry" : "");
+        name.textContent = f.name;
+        name.onclick = () => openFileTab(i);
+        li.appendChild(name);
+        const del = document.createElement("button");
+        del.textContent = "×";
+        del.title = "delete";
+        del.onclick = (e) => { e.stopPropagation(); deleteFile(i); };
+        li.appendChild(del);
+        fileListEl.appendChild(li);
+      });
+      renderEntryBadge();
+    }
+
+    // Tiny indicator in the cmd-strip status area: shows "entry: <file>"
+    // whenever there's a chosen entry, "(no entry — first .b will be
+    // used)" otherwise. Keeps the compile context visible without
+    // hunting through the file pane.
+    function renderEntryBadge() {
+      if (!entryBadgeEl) return;
+      const entry = files.find(f => f.entry);
+      if (entry) {
+        entryBadgeEl.innerHTML =
+          `<span class="entry-badge-key">entry:</span> ` +
+          `<span class="entry-badge-name">${escapeHtml(entry.name)}</span>`;
+      } else {
+        const firstB = files.find(f => f.name.endsWith(".b"));
+        entryBadgeEl.innerHTML = firstB
+          ? `<span class="entry-badge-key">entry:</span> ` +
+            `<span class="entry-badge-name entry-badge-implicit">` +
+            `${escapeHtml(firstB.name)} (default)</span>`
+          : `<span class="entry-badge-key">no .b file</span>`;
+      }
+    }
+    async function addFile() {
+      commitActiveEdit();
+      const name = prompt("New file name (.b, .h, or .c):", "main.c");
+      if (!name) return;
+      if (files.some(f => f.name === name)) { alert(`"${name}" already exists`); return; }
+      let content;
+      if (name.endsWith(".c"))      content = "main() {\n\treturn(0);\n}\n";
+      else if (name.endsWith(".b")) content = `SECTION "${name.replace(/\.b$/, "")}"\n\nGET "libhdr"\n\n`;
+      else                          content = "// BCPL header — declare globals here\n\nGLOBAL {\n}\n";
+      files.push({ name, entry: false, content });
+      rebuildSourceTabs(false);
+      openFileTab(files.length - 1);
+      renderFileList();
+      await saveCurrentWorkspace();
+    }
+    function deleteFile(i) {
+      commitActiveEdit();
+      if (files.length === 1) { alert("keep at least one file"); return; }
+      if (!confirm(`delete "${files[i].name}"?`)) return;
+      const wasEntry = files[i].entry;
+      files.splice(i, 1);
+      if (wasEntry) {
+        const b = files.findIndex(f => isCompilable(f.name));
+        if (b >= 0) files[b].entry = true;
+      }
+      // Drop any source tabs referencing the removed file; shift
+      // fileIdx for tabs after it.
+      sourceTabs = sourceTabs.filter(t => !(t.kind === "file" && t.fileIdx === i));
+      for (const t of sourceTabs) {
+        if (t.kind === "file" && t.fileIdx > i) t.fileIdx--;
+      }
+      persistFiles();
+      rebuildSourceTabs(true);
+    }
+    function renameFile() {
+      const i = activeFileIdx();
+      if (i < 0) { alert("rename applies to a file tab"); return; }
+      commitActiveEdit();
+      const cur = files[i];
+      const name = prompt("New name:", cur.name);
+      if (!name || name === cur.name) return;
+      if (files.some((f, j) => j !== i && f.name === name)) {
+        alert(`"${name}" already exists`); return;
+      }
+      cur.name = name;
+      persistFiles();
+      renderSourceTabs();
+      renderFileList();
+    }
+    // Click-to-promote: star button in the file list calls this.
+    // Idempotent — clicking the current entry is a no-op. Filtered
+    // for .b files (the star is a placeholder on .h rows anyway).
+    function setEntryByIdx(i) {
+      if (i < 0 || i >= files.length) return;
+      const cur = files[i];
+      if (!isCompilable(cur.name)) return;
+      if (cur.entry) return;
+      commitActiveEdit();
+      for (const f of files) f.entry = (f === cur);
+      persistFiles();
+      invalidateLastBuilt();
+      renderSourceTabs();
+      renderFileList();
+      refreshLangUI();
+    }
+    // ------------------ Assets tab ----------------------------------
+    // Image extensions get decoded to RGBA; everything else is stored
+    // raw as a binary blob (WADs, .bin, etc.) and reachable from BCPL
+    // via Sys_assetload with info!1 == 0.
+    const IMAGE_EXT = /\.(png|jpe?g|gif|webp|bmp)$/i;
+    async function loadAssetFile(file) {
+      try {
+        const { decodeImageToAsset, assetBackend } =
+          await import(`./runtime.js?v=${V}`);
+        let rec;
+        if (IMAGE_EXT.test(file.name)) {
+          rec = await decodeImageToAsset(file);
+        } else {
+          rec = { bytes: new Uint8Array(await file.arrayBuffer()) };
+        }
+        assetBackend.set(file.name, rec);
+        await persistAssetsForActive();
+        renderAssetList();
+      } catch (e) {
+        alert(`Asset load failed: ${e.message ?? e}`);
+      }
+    }
+    async function renderAssetList() {
+      const { assetBackend } = await import(`./runtime.js?v=${V}`);
+      const ul = document.getElementById("assetList");
+      ul.innerHTML = "";
+      for (const name of assetBackend.list()) {
+        const rec = assetBackend.get(name);
+        const li = document.createElement("li");
+        const title = document.createElement("span");
+        if (rec.bytes) {
+          title.textContent = `${name}  (${rec.bytes.length} bytes)`;
+        } else {
+          title.textContent = `${name}  (${rec.w}×${rec.h})`;
+        }
+        const del = document.createElement("button");
+        del.textContent = "×";
+        del.title = "remove";
+        del.onclick = async () => {
+          assetBackend.del(name);
+          await persistAssetsForActive();
+          renderAssetList();
+        };
+        li.appendChild(title);
+        li.appendChild(del);
+        ul.appendChild(li);
+      }
+    }
+    document.getElementById("addAsset").addEventListener("click", () => {
+      document.getElementById("assetFile").click();
+    });
+    document.getElementById("assetFile").addEventListener("change", async (e) => {
+      const f = e.target.files?.[0];
+      if (f) await loadAssetFile(f);
+      e.target.value = "";
+    });
+
+    // Project bundle export / import lives entirely under the
+    // workspace bar now (wsExportCurrent / wsImportFromFile).
+    // Header workspace bar.
+    document.getElementById("wsSelect").addEventListener("change", (e) => {
+      switchWorkspace(e.target.value);
+    });
+    document.getElementById("wsNew").addEventListener("click", async () => {
+      const name = prompt("New workspace name:");
+      if (name) await wsCreate(name);
+    });
+    document.getElementById("wsRename").addEventListener("click", async () => {
+      const cur = wsActive();
+      const next = prompt(`Rename "${cur}" to:`, cur);
+      if (next && next !== cur) await wsRename(cur, next);
+    });
+    document.getElementById("wsDelete").addEventListener("click", async () => {
+      await wsDelete(wsActive());
+    });
+    document.getElementById("wsExport").addEventListener("click", wsExportCurrent);
+    document.getElementById("wsImport").addEventListener("click", () => {
+      document.getElementById("wsImportFile").click();
+    });
+    document.getElementById("wsImportFile").addEventListener("change", async (e) => {
+      const f = e.target.files?.[0];
+      if (f) await wsImportFromFile(f);
+      e.target.value = "";
+    });
+    renderWsSelect();
+
+    // ------------------ Examples tab (tutorial track) ------------------
+    let selectedExample = TRACK[0]?.slug ?? EXTRAS[0];
+
+    async function openExamplePreview(slug) {
+      commitActiveEdit();
+      selectedExample = slug;
+      renderExampleList();
+      const src = await fetchText(`examples/${slug}.b?v=${Date.now()}`, "");
+      if (src) openPreviewTab(slug, src);
+    }
+
+    // Add an example as a real workspace file (skip the preview step).
+    // If the file already exists, prompt before overwriting.
+    async function addExampleAsFile(slug) {
+      commitActiveEdit();
+      const src = await fetchText(`examples/${slug}.b?v=${Date.now()}`, "");
+      if (!src) return;
+      const fileName = `${slug}.b`;
+      const existing = files.findIndex(f => f.name === fileName);
+      if (existing >= 0) {
+        if (!confirm(`"${fileName}" already exists — overwrite?`)) return;
+        files[existing].content = src;
+      } else {
+        const haveEntry = files.some(f => f.entry);
+        files.push({ name: fileName, entry: !haveEntry, content: src });
+      }
+      // Drop any matching preview tab so we don't end up with both.
+      sourceTabs = sourceTabs.filter(
+        t => !(t.kind === "preview" && t.name === slug));
+      rebuildSourceTabs(false);
+      const idx = files.findIndex(f => f.name === fileName);
+      openFileTab(idx);
+      renderFileList();
+      await saveCurrentWorkspace();
+      invalidateLastBuilt();
+    }
+
+    // Fill the preview note bar for a given preview slug. If the slug
+    // is in the tutorial TRACK, show title/level/summary/goals and
+    // enable prev/next navigation. Otherwise fall back to a minimal line.
+    function renderPreviewMeta(slug) {
+      const entry = BY_SLUG.get(slug);
+      previewMetaEl.className = "preview-meta";
+      if (!entry) {
+        previewMetaEl.innerHTML =
+          `<div class="title">${escapeHtml(slug)}</div>` +
+          `<div class="summary">Preview — save to make it a regular file.</div>`;
+        prevLessonBtn.disabled = true;
+        nextLessonBtn.disabled = true;
+        return;
+      }
+      const level = LEVELS.find(l => l.n === entry.level);
+      let html = `<div><span class="title">${escapeHtml(entry.title)}</span>` +
+        `<span class="badge">L${entry.level} · ${escapeHtml(entry.topic)}</span></div>` +
+        `<div class="summary">${escapeHtml(entry.summary)}</div>`;
+      if (entry.goals?.length) {
+        html += "<ul>";
+        for (const g of entry.goals) html += `<li>${escapeHtml(g)}</li>`;
+        html += "</ul>";
+      }
+      previewMetaEl.innerHTML = html;
+      prevLessonBtn.disabled = !prevSlug(slug);
+      nextLessonBtn.disabled = !nextSlug(slug);
+    }
+
+    function currentPreviewSlug() {
+      const t = sourceTabs[activeTab];
+      return (t && t.kind === "preview") ? t.name : null;
+    }
+    function goPrevLesson() {
+      const cur = currentPreviewSlug();
+      if (!cur) return;
+      const p = prevSlug(cur);
+      if (p) openExamplePreview(p);
+    }
+    function goNextLesson() {
+      const cur = currentPreviewSlug();
+      if (!cur) return;
+      const n = nextSlug(cur);
+      if (n) openExamplePreview(n);
+    }
+
+    function renderExampleList() {
+      exampleListEl.innerHTML = "";
+
+      // "Start tutorial" button jumps to the first lesson.
+      const start = document.createElement("li");
+      start.innerHTML = "<span style='color: var(--accent);'>▶ Start tutorial</span>";
+      start.style.fontStyle = "italic";
+      start.onclick = () => openExamplePreview(TRACK[0].slug);
+      exampleListEl.appendChild(start);
+
+      // Group track entries by level.
+      for (const lv of LEVELS) {
+        const lessons = TRACK.filter(e => e.level === lv.n);
+        if (!lessons.length) continue;
+        const hdr = document.createElement("li");
+        hdr.style.pointerEvents = "none";
+        hdr.style.color = "var(--fg-dim)";
+        hdr.style.marginTop = "0.4rem";
+        hdr.style.fontSize = "0.72rem";
+        hdr.style.textTransform = "uppercase";
+        hdr.style.letterSpacing = "0.05em";
+        hdr.textContent = `Level ${lv.n} — ${lv.name}`;
+        exampleListEl.appendChild(hdr);
+        for (const e of lessons) {
+          exampleListEl.appendChild(makeExampleLi(e.slug, e.title, e.summary));
+        }
+      }
+
+      // Extras section (non-track demos).
+      if (EXTRAS.length) {
+        const hdr = document.createElement("li");
+        hdr.style.pointerEvents = "none";
+        hdr.style.color = "var(--fg-dim)";
+        hdr.style.marginTop = "0.6rem";
+        hdr.style.fontSize = "0.72rem";
+        hdr.style.textTransform = "uppercase";
+        hdr.style.letterSpacing = "0.05em";
+        hdr.textContent = "Extras";
+        exampleListEl.appendChild(hdr);
+        for (const name of EXTRAS) {
+          exampleListEl.appendChild(makeExampleLi(name, name, ""));
+        }
+      }
+
+      // C examples (museum) — each adds a real .c file to the workspace.
+      {
+        const hdr = document.createElement("li");
+        hdr.style.pointerEvents = "none";
+        hdr.style.color = "var(--fg-dim)";
+        hdr.style.marginTop = "0.6rem";
+        hdr.style.fontSize = "0.72rem";
+        hdr.style.textTransform = "uppercase";
+        hdr.style.letterSpacing = "0.05em";
+        hdr.textContent = "C · 1972";
+        exampleListEl.appendChild(hdr);
+        for (const e of C_EXAMPLES) {
+          const li = document.createElement("li");
+          const nm = document.createElement("span");
+          nm.className = "name"; nm.style.flex = "1";
+          nm.textContent = e.name + (e.dialect ? `  · ${e.dialect}` : "");
+          if (e.dialect) nm.title = `needs the ${e.dialect} dialect`;
+          li.appendChild(nm);
+          const add = document.createElement("button");
+          add.textContent = "+"; add.title = "add as a .c file"; add.className = "example-add";
+          add.onclick = (ev) => { ev.stopPropagation(); addCExampleAsFile(e.name); };
+          li.appendChild(add);
+          exampleListEl.appendChild(li);
+        }
+      }
+    }
+
+    function makeExampleLi(slug, title, summary) {
+      const li = document.createElement("li");
+      const name = document.createElement("span");
+      name.className = "name";
+      name.textContent = title;
+      if (summary) name.title = summary;
+      name.style.flex = "1";
+      li.appendChild(name);
+      const add = document.createElement("button");
+      add.textContent = "+";
+      add.title = "add to workspace";
+      add.className = "example-add";
+      add.onclick = (ev) => { ev.stopPropagation(); addExampleAsFile(slug); };
+      li.appendChild(add);
+      if (slug === selectedExample) li.classList.add("active");
+      li.onclick = () => openExamplePreview(slug);
+      return li;
+    }
+
+    // ------------------ API tab ------------------
+    // Category display order (mirrors stdlib zone map). Categories
+    // not listed here fall to the bottom in alpha order.
+    const API_CAT_ORDER = [
+      "I/O", "input", "streams", "memory", "parse",
+      "math", "system", "syscall", "coroutines",
+      "graphics", "audio", "debug", "constants",
+    ];
+    // Track which sections are expanded (default: collapsed except
+    // when filter is active — then all groups with hits open).
+    const apiCatOpen = new Set(["I/O"]);
+
+    function renderApiList(filter = "") {
+      apiListEl.innerHTML = "";
+      const seen = new Set();
+      const allNames = [
+        ...slots.map(s => s.name).filter(n => n !== "stop_fn"),
+        ...aliases.map(a => a.name),
+        // All API_DOCS keys — covers Sys_* / sdl_* / engine_* / manifest
+        // constants, anything not already in slots/aliases.
+        ...Object.keys(API_DOCS),
+      ].filter(n => !seen.has(n) && (seen.add(n), true));
+      allNames.sort();
+
+      // Bucket by category.
+      const byCat = new Map();
+      const f = filter.toLowerCase();
+      for (const name of allNames) {
+        if (f && !name.toLowerCase().includes(f)) continue;
+        const doc = API_DOCS[name];
+        const cat = doc?.cat ?? "other";
+        if (!byCat.has(cat)) byCat.set(cat, []);
+        byCat.get(cat).push(name);
+      }
+
+      // Order categories: known first per API_CAT_ORDER, then alpha.
+      const cats = [...byCat.keys()].sort((a, b) => {
+        const ai = API_CAT_ORDER.indexOf(a);
+        const bi = API_CAT_ORDER.indexOf(b);
+        if (ai >= 0 && bi >= 0) return ai - bi;
+        if (ai >= 0) return -1;
+        if (bi >= 0) return 1;
+        return a.localeCompare(b);
+      });
+
+      const filtering = !!f;
+      for (const cat of cats) {
+        const names = byCat.get(cat);
+        // Section header.
+        const hdr = document.createElement("li");
+        hdr.className = "cat-header";
+        const isOpen = filtering || apiCatOpen.has(cat);
+        hdr.dataset.cat = cat;
+        hdr.innerHTML = `<span class="cat-arrow">${isOpen ? "▾" : "▸"}</span>` +
+          `<span class="cat-name">${escapeHtml(cat)}</span>` +
+          `<span class="cat-count">${names.length}</span>`;
+        hdr.onclick = () => {
+          if (apiCatOpen.has(cat)) apiCatOpen.delete(cat);
+          else apiCatOpen.add(cat);
+          renderApiList(apiFilterEl.value);
+        };
+        apiListEl.appendChild(hdr);
+
+        if (!isOpen) continue;
+        for (const name of names) {
+          const doc = API_DOCS[name];
+          const li = document.createElement("li");
+          li.className = "api-item";
+          const lbl = document.createElement("span");
+          lbl.textContent = name;
+          li.appendChild(lbl);
+          li.onclick = () => showApi(name, li);
+          apiListEl.appendChild(li);
+        }
+      }
+    }
+    function showApi(name, li) {
+      apiListEl.querySelectorAll("li").forEach(x => x.classList.remove("active"));
+      li?.classList.add("active");
+      const doc = API_DOCS[name];
+      if (!doc) {
+        apiDetailEl.innerHTML =
+          `<div class="sig">${name}</div>` +
+          `<div class="desc">(no help available — see g/libhdr.h or BCPL manual)</div>`;
+        return;
+      }
+      // Multi-line descs (e.g. Sys_sdl op table) get a scrollable
+      // "long" container with an expand toggle.
+      const isLong = doc.desc.includes("\n") || doc.desc.length > 220;
+      const toggle = isLong
+        ? `<button class="toggle" id="apiToggle" type="button">expand</button>`
+        : "";
+      apiDetailEl.innerHTML =
+        `<div class="sig">${escapeHtml(doc.sig)}${toggle}</div>` +
+        `<div class="desc${isLong ? " long" : ""}" id="apiDesc">${escapeHtml(doc.desc)}</div>`;
+      const btn  = document.getElementById("apiToggle");
+      const desc = document.getElementById("apiDesc");
+      if (btn && desc) {
+        btn.onclick = () => {
+          desc.classList.toggle("expanded");
+          btn.textContent = desc.classList.contains("expanded") ? "collapse" : "expand";
+        };
+      }
+    }
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+    }
+
+    // ------------------ GET + compile ------------------
+    async function fetchText(url, fallback) {
+      const r = await fetch(url);
+      return r.ok ? await r.text() : fallback;
+    }
+
+    const BUILTIN_HEADERS = ["libhdr.h", "bcplfecg.h", "sdl.h", "doomengine.h"];
+    async function seedBuiltinHeaders() {
+      // Always re-fetch — the shipped header may have been updated
+      // (e.g. new Sys_* manifests) since the user's last visit.
+      // localStorage caching of these caused a hard-to-spot drift bug.
+      for (const h of BUILTIN_HEADERS) {
+        const txt = await fetchText(`headers/${h}?v=${V}`, "");
+        if (txt) storageBackend.set(h, txt);
+      }
+    }
+    function seedUserFiles() {
+      for (const f of files) storageBackend.set(f.name, f.content);
+    }
+
+    let wabtPromise = null;
+    function getWabt() {
+      if (!wabtPromise) {
+        wabtPromise = import("https://esm.sh/wabt@1.0.36").then(m => m.default());
+      }
+      return wabtPromise;
+    }
+
+    // Lazy-load binaryen for the in-browser asyncify pass.
+    // jsDelivr's +esm bundles the CommonJS package as ESM without
+    // tripping over Node's require shim (esm.sh's polyfill rejects it).
+    // Pin >=122 so the parser accepts our bulk-memory wasm.
+    let binaryenPromise = null;
+    function getBinaryen() {
+      if (!binaryenPromise) {
+        binaryenPromise = import("https://cdn.jsdelivr.net/npm/binaryen@129/+esm");
+      }
+      return binaryenPromise;
+    }
+
+    // List of imports that may suspend execution. Must match
+    // bcpl2wasm.sh + site/build.sh to keep behavior consistent.
+    const ASYNC_IMPORTS = [
+      "env.bcpl_cowait", "env.bcpl_callco", "env.bcpl_resumeco",
+      "env.bcpl_changeco", "env.bcpl_delay",
+    ];
+
+    // Run asyncify on a wasm buffer and return the transformed bytes.
+    async function asyncifyTransform(bytes) {
+      const mod_ns = await getBinaryen();
+      const binaryen = mod_ns.default ?? mod_ns;
+      const mod = binaryen.readBinary(new Uint8Array(bytes));
+      // Enable everything so the emitter preserves bulk-memory data
+      // segments referenced by our register() function.
+      if (typeof mod.setFeatures === "function" && binaryen.Features) {
+        mod.setFeatures(binaryen.Features.All);
+      }
+      // Explicit asyncify-imports list. Default (no list) is supposed
+      // to treat ALL imports as suspending, but in practice some
+      // binaryen builds optimize away the post-call state check for
+      // void-returning direct imports — so bcpl_break sets the unwind
+      // flag, the call returns, and the unwind only fires at the next
+      // instrumented call boundary (which is the NEXT statement's
+      // break call). Naming each suspending import explicitly forces
+      // the check at exactly the call site, so breakpoints pause
+      // BEFORE the statement body runs rather than after.
+      const suspending = [
+        "env.bcpl_cowait", "env.bcpl_callco", "env.bcpl_resumeco",
+        "env.bcpl_changeco", "env.bcpl_delay",
+        "env.bcpl_break",
+      ].join(",");
+      if (typeof binaryen.setPassArgument === "function") {
+        binaryen.setPassArgument("asyncify-imports", suspending);
+      }
+      mod.runPasses(["asyncify"]);
+      const out = mod.emitBinary();
+      mod.dispose();
+      // out is a Uint8Array whose .buffer may be larger; slice to the
+      // exact bytes for a tight ArrayBuffer.
+      return out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength);
+    }
+
+    // Source-level detection: user code uses one of the coroutine
+    // suspend names. Compiled wasm doesn't import bcpl_cowait directly
+    // (calls go through G!N dispatch via master), so .wat content
+    // can't be inspected here — scan the BCPL source text.
+    function srcNeedsAsyncify(srcText) {
+      // Debugger mode forces asyncify on every module so breakpoints
+      // can suspend any program (otherwise bcpl_break can't unwind).
+      if (dbgModeEl?.checked) return true;
+      return /\b(cowait|callco|resumeco|changeco|createco|delay)\b/.test(srcText);
+    }
+
+    // Post-pass optimizer. Reads bytes, runs binaryen's default O2
+    // pipeline (peephole, inlining, dead-code elim, load sinking),
+    // emits new bytes. Falls back to the input on any failure so a
+    // pathological example never blocks compile.
+    async function optimizeWasm(bytes, label = "opt") {
+      const mod_ns = await getBinaryen();
+      const binaryen = mod_ns.default ?? mod_ns;
+      const mod = binaryen.readBinary(new Uint8Array(bytes));
+      if (typeof mod.setFeatures === "function" && binaryen.Features) {
+        mod.setFeatures(binaryen.Features.All);
+      }
+      try {
+        if (typeof binaryen.setOptimizeLevel === "function") {
+          binaryen.setOptimizeLevel(2);
+          binaryen.setShrinkLevel(1);
+        }
+        mod.optimize();
+        const out = mod.emitBinary();
+        mod.dispose();
+        return out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength);
+      } catch (e) {
+        console.warn(`[optimize] ${label} failed, using unoptimized bytes:`, e);
+        try { mod.dispose(); } catch { /* ignore */ }
+        return bytes;
+      }
+    }
+
+    async function assembleWat(watText, label = "live.wat", needsAsync = false) {
+      const wabt = await getWabt();
+      const mod  = wabt.parseWat(label, watText);
+      mod.resolveNames();
+      mod.validate();
+      const { buffer } = mod.toBinary({ log: false });
+      mod.destroy();
+      let bytes = buffer;
+      const rawSize = bytes.byteLength;
+      let asyncSize = null;
+      if (needsAsync) {
+        try {
+          const out = await asyncifyTransform(bytes);
+          asyncSize = out.byteLength ?? out.length;
+          bytes = out;
+        } catch (e) {
+          const msg = e?.message ?? String(e);
+          outputEl.textContent += `[asyncify] FAILED for ${label}: ${msg}\n`;
+          console.error("[asyncify] FAILED:", e);
+        }
+      }
+      // Skip the optimizer in Debug mode. binaryen's -O2 + shrink can
+      // (in principle) fold our $__bp_armed gate or move the (call
+      // $__break) somewhere asyncify can't unwind from. Debug runs
+      // care about correctness, not size; release runs get the size
+      // + speed win.
+      let finalBytes = bytes;
+      if (!dbgModeEl.checked) {
+        finalBytes = await optimizeWasm(bytes, label);
+      }
+      const finalSize = finalBytes.byteLength ?? finalBytes.length;
+      const asyncPart = asyncSize !== null ? ` -> ${asyncSize} (async)` : "";
+      const optPart   = dbgModeEl.checked ? " (opt skipped: debug)" : "";
+      console.log(`[build] ${label}: ${rawSize}${asyncPart} -> ${finalSize} bytes${optPart}`);
+      return finalBytes;
+    }
+
+    function splitModules(watText) {
+      const out = []; let cur = null;
+      for (const line of watText.split("\n")) {
+        if (/^\(module\b/.test(line)) { if (cur) out.push(cur); cur = line + "\n"; }
+        else if (cur) cur += line + "\n";
+      }
+      if (cur) out.push(cur);
+      return out;
+    }
+
+    // Pull cintsys "Error near <file>[<line>]: <msg>" lines out of a
+    // diag blob into structured records. Two flavours:
+    //   syntax  (bcplsyn): `Error near <file>[<line>]:  <msg>`
+    //   semantic (bcpltrn): `Error in function <fn> near <file>[<line>]: <msg>`
+    // File paths come back basename-stripped so they match the user's
+    // tab name in the editor (compileBcplFile passes them as bare
+    // names like "61-doom-sf2.b" already).
+    function parseDiagErrors(diag) {
+      if (!diag) return [];
+      const re = /Error(?: in function (\S+))? near ([^[\n]+)\[(\d+)\]:\s*(.+?)$/gm;
+      const out = [];
+      let m;
+      while ((m = re.exec(diag)) !== null) {
+        const fnName = m[1] ?? null;
+        const file   = m[2].trim().replace(/^.*\//, "");  // basename
+        const line   = parseInt(m[3], 10);
+        const msg    = m[4].trim();
+        out.push({ file, line, fnName, msg });
+      }
+      return out;
+    }
+
+    async function compileBcplFile(fromName, toName) {
+      storageBackend.del?.(toName);
+      const cmd = `FROM ${fromName} TO ${toName}\n`;
+      let diag = "";
+      const rt = new BcplRuntime((s) => { diag += s; }, cmd);
+      await rt.loadMaster("master.wasm?v=" + V);
+      for (const u of ["bcplwasm-1.wasm", "bcplwasm-2.wasm", "bcplwasm-3.wasm"]) {
+        await rt.loadProgram(u + "?v=" + V);
+      }
+      rt.initMaster();
+      let exitCode = 0;
+      try { exitCode = await rt.run(); }
+      catch (e) {
+        const err = new Error(`${fromName}: runtime error: ${e.message ?? e}\n${diag}`);
+        err.diagErrors = parseDiagErrors(diag);
+        err.diagRaw = diag;
+        throw err;
+      }
+      const wat = storageBackend.get(toName);
+      storageBackend.del?.(toName);
+      if (!wat) {
+        const err = new Error(`${fromName}: no .wat (exit=${exitCode})\n${diag}`);
+        err.diagErrors = parseDiagErrors(diag);
+        err.diagRaw = diag;
+        throw err;
+      }
+      return { wat, diag, exitCode, diagErrors: parseDiagErrors(diag) };
+    }
+
+    function setStatus(text, isErr = false) {
+      statusEl.textContent = text;
+      statusEl.classList.toggle("err", isErr);
+    }
+
+    // Walk GET "X" directives starting from the entry source.
+    // Returns the ordered list of .b sources that need compiling:
+    //   entry first... no wait, libraries first (so their register()
+    //   runs before entry's register() overwrites G!1). Topological
+    //   order with entry LAST.
+    // Headers (.h) are seeded into storageBackend by seedUserFiles()
+    // but never compiled.
+    // Built-in names (libhdr / bcplfecg) are skipped — they're already
+    // seeded as built-in headers and have no user-supplied .b.
+    function resolveDeps(entryFile, filesArr) {
+      const BUILTIN = new Set(["libhdr", "bcplfecg", "sdl"]);
+      const byBaseName = new Map();
+      for (const f of filesArr) {
+        const m = f.name.match(/^(.*)\.(b|h)$/);
+        if (m) byBaseName.set(m[1] + "." + m[2], f);
+      }
+      const ordered = [];      // libs first, entry LAST
+      const visited = new Set();
+      const visit = (file) => {
+        if (visited.has(file.name)) return;
+        visited.add(file.name);
+        const gets = [...file.content.matchAll(/\bGET\s+"([^"]+)"/g)]
+          .map(m => m[1]);
+        for (const name of gets) {
+          if (BUILTIN.has(name)) continue;
+          // Resolve to .b if it exists; otherwise skip (.h-only is fine).
+          const bFile = byBaseName.get(name + ".b");
+          if (bFile && bFile !== file) visit(bFile);
+        }
+        if (file !== entryFile) ordered.push(file);
+      };
+      visit(entryFile);
+      ordered.push(entryFile);  // entry last
+      return ordered;
+    }
+
+    // Shipped library .b files (in addition to BUILTIN_HEADERS). If a
+    // user source GETs one of these names and no matching .b lives in
+    // their files[] yet, fetch from site/examples/ and add it as a
+    // companion file so resolveDeps can pick it up.
+    const SHIPPED_LIBS = new Set(["doomengine", "stdlib"]);
+
+    async function attachShippedDeps() {
+      const namesPresent = new Set(files.map(f => f.name));
+      // Scan every user .b for GET'd shipped libs.
+      const wanted = new Set();
+      for (const f of files) {
+        if (!f.name.endsWith(".b")) continue;
+        const gets = [...f.content.matchAll(/\bGET\s+"([^"]+)"/g)].map(m => m[1]);
+        for (const g of gets) if (SHIPPED_LIBS.has(g)) wanted.add(g);
+      }
+      for (const lib of wanted) {
+        if (namesPresent.has(lib + ".b")) continue;
+        const src = await fetchText(`examples/${lib}.b?v=${V}`, "");
+        if (!src) continue;
+        files.push({ name: lib + ".b", entry: false, content: src });
+      }
+    }
+
+    // Last successful compile cache, consumed by Run-only.
+    // Cleared whenever files change or a compile fails.
+    let lastBuilt = null;
+    // { libBufs: [[Uint8Array,...], ...], entryBufs: [Uint8Array,...],
+    //   modulesPerSource: [n,n,...] }
+
+    function invalidateLastBuilt() {
+      lastBuilt = null;
+      wasmDisasmCache = null;
+      if (runOnlyBtn) runOnlyBtn.disabled = true;
+      // Reset wasm tab text so a stale build can't be mistaken for fresh.
+      if (wasmHeaderEl) wasmHeaderEl.textContent = "(no wasm built yet)";
+      if (wasmDisasmEl) wasmDisasmEl.textContent = "(not yet compiled)";
+    }
+
+    // Memoised disassembly so opening the Wasm tab repeatedly is cheap.
+    // Keyed by the entry chunk byte-length as a quick stable proxy.
+    let wasmDisasmCache = null;
+
+    // Render the Wasm tab from the cached lastBuilt entry chunks.
+    // Summary stats are computed by walking the binaryen module API.
+    // The disassembly is folded behind <details> so the initial paint
+    // is cheap; clicking expand triggers the heavier emitText.
+    async function renderWasmView() {
+      if (!lastBuilt) {
+        wasmHeaderEl.textContent = "(no wasm built yet — Compile first)";
+        wasmDisasmEl.textContent = "";
+        return;
+      }
+      const bytes = lastBuilt.entryBufs[0] ?? null;
+      if (!bytes) {
+        wasmHeaderEl.textContent = "(entry has no wasm chunks)";
+        wasmDisasmEl.textContent = "";
+        return;
+      }
+      if (wasmDisasmCache && wasmDisasmCache.byteLength === bytes.byteLength) {
+        wasmHeaderEl.innerHTML = wasmDisasmCache.headerHTML;
+        wasmDisasmEl.textContent = wasmDisasmCache.disasm;
+        return;
+      }
+      wasmHeaderEl.textContent = "loading binaryen…";
+      wasmDisasmEl.textContent = "";
+      try {
+        const mod_ns = await getBinaryen();
+        const binaryen = mod_ns.default ?? mod_ns;
+        const mod = binaryen.readBinary(new Uint8Array(bytes));
+        if (typeof mod.setFeatures === "function" && binaryen.Features) {
+          mod.setFeatures(binaryen.Features.All);
+        }
+        const text = mod.emitText();
+        // Summary stats — straight off the text since binaryen.js
+        // doesn't expose all section sizes as numbers, and counting
+        // lines is plenty for "is this thing wired correctly".
+        const imports = [...text.matchAll(/^\s*\(import\s+"([^"]+)"\s+"([^"]+)"/gm)]
+          .map(m => `${m[1]}.${m[2]}`);
+        const importCount = imports.length;
+        const funcLines = text.match(/^\s*\(func\s+\$/gm) ?? [];
+        const exportLines = text.match(/^\s*\(export\s+/gm) ?? [];
+        const globalLines = text.match(/^\s*\(global\s+\$/gm) ?? [];
+        const elemLines  = text.match(/^\s*\(elem\b/gm)  ?? [];
+        const dataLines  = text.match(/^\s*\(data\b/gm)  ?? [];
+        const hasAsyncify = text.includes("$asyncify_state") ||
+                            text.includes("asyncify_start_unwind") ||
+                            imports.some(s => s.startsWith("env.asyncify"));
+        const hasBpImport = imports.includes("env.bcpl_break");
+        const hasBpArmedImport = imports.includes("env.__bp_armed");
+        const bpCallCount = (text.match(/\(call\s+\$__break\b/g) ?? []).length;
+        // Top-10 largest functions by line count.
+        const fnRe = /^\s*\(func\s+(\$[\w$]+)([\s\S]*?)(?=^\s*\(func\s+\$|^\s*\)\s*;; end module|\Z)/gm;
+        const fnSizes = [];
+        let m;
+        while ((m = fnRe.exec(text)) !== null) {
+          const lines = (m[2].match(/\n/g) ?? []).length + 1;
+          fnSizes.push({ name: m[1], lines });
+        }
+        fnSizes.sort((a, b) => b.lines - a.lines);
+        const top = fnSizes.slice(0, 10);
+        const yn = (b, ok = true) => b
+          ? `<span class="yes">yes</span>`
+          : `<span class="${ok ? "no" : "v"}">no</span>`;
+        const headerHTML =
+          `<span class="k">module size  :</span> <span class="v">${bytes.byteLength.toLocaleString()} bytes</span>\n` +
+          `<span class="k">imports      :</span> <span class="v">${importCount}</span>` +
+          `   <span class="k">exports:</span> <span class="v">${exportLines.length}</span>` +
+          `   <span class="k">functions:</span> <span class="v">${funcLines.length}</span>` +
+          `   <span class="k">globals:</span> <span class="v">${globalLines.length}</span>` +
+          `   <span class="k">elems:</span> <span class="v">${elemLines.length}</span>` +
+          `   <span class="k">data:</span> <span class="v">${dataLines.length}</span>\n` +
+          `<span class="k">asyncify     :</span> ${yn(hasAsyncify)}` +
+          `   <span class="k">bcpl_break import:</span> ${yn(hasBpImport)}` +
+          `   <span class="k">__bp_armed import:</span> ${yn(hasBpArmedImport)}` +
+          `   <span class="k">break call sites:</span> <span class="v">${bpCallCount}</span>\n` +
+          `<span class="k">top fns      :</span>\n` +
+          top.map(f => `  <span class="v">${escHtml(f.name)}</span>  <span class="k">${f.lines} lines</span>`).join("\n");
+        mod.dispose();
+        wasmDisasmCache = { byteLength: bytes.byteLength, headerHTML, disasm: text };
+        wasmHeaderEl.innerHTML = headerHTML;
+        wasmDisasmEl.textContent = text;
+      } catch (e) {
+        wasmHeaderEl.textContent = `wasm view error: ${e.message ?? e}`;
+        wasmDisasmEl.textContent = "";
+        console.error(e);
+      }
+    }
+
+    // Compile current workspace into wasm bytes. Returns the build
+    // artifact (or null on failure — diagnostics already routed).
+    // ---------------- Museum: C language ----------------
+    // Language follows the entry file's extension. .c files are first-class in
+    // the files pane and compile via the client-side C compiler; BCPL paths are
+    // untouched. The C dialect (last1120 / prestruct) is a compiler option.
+    async function doCompileC(entry) {
+      const { wat, diagnostics } = await compileC(entry.content, cDialect());
+      liveWatEl.textContent = wat || "(no WAT)";
+      if (diagnostics) outputEl.textContent += diagnostics + "\n";
+      if (!wat || !wat.includes("(func")) {
+        setStatus("compile error", true);
+        return null;
+      }
+      const bytes = await assembleWat(wat, "c.wat", false);
+      setStatus(diagnostics ? "compiled (warnings)" : "compiled");
+      return { libBufs: [], entryBufs: [bytes], modulesPerSource: [1] };
+    }
+
+    async function doRunC(built) {
+      const rt = makeCRuntime((s) => { outputEl.textContent += s; }, stdinEl.value);
+      currentRt = rt; lastMemRt = rt;
+      stopBtn.disabled = false;
+      try {
+        await rt.loadProgramFromBytes(built.entryBufs[0]);
+        setStatus("running…");
+        await rt.run();
+        setStatus("ok");
+      } catch (err) {
+        setStatus("runtime error", true);
+        outputEl.textContent += `\n[runtime error] ${err.message ?? err}`;
+        console.error(err);
+      } finally {
+        stopBtn.disabled = true;
+      }
+    }
+
+    // Show the C dialect control + hide the (BCPL-specific) debugger when the
+    // entry file is .c. Called whenever the entry changes.
+    function refreshLangUI() {
+      const c = entryIsC();
+      document.getElementById("cDialect").style.display = c ? "" : "none";
+      document.getElementById("dbgMode").style.display  = c ? "none" : "";
+      if (c) { continueBtn.style.display = "none"; stepBtn.style.display = "none"; }
+    }
+    document.getElementById("cDialect").addEventListener("change", () => {
+      if (typeof invalidateLastBuilt === "function") invalidateLastBuilt();
+    });
+
+    // Add a C example program as a real .c file in the workspace.
+    function addCExampleAsFile(exName) {
+      const e = C_EXAMPLES.find((x) => x.name === exName);
+      if (!e) return;
+      const fname = exName.split(/[ (]/)[0] + ".c";   // "upper (reads stdin)" -> "upper.c"
+      let idx = files.findIndex((f) => f.name === fname);
+      if (idx < 0) {
+        files.push({ name: fname, entry: !files.some((f) => f.entry), content: e.source });
+        idx = files.length - 1;
+      } else {
+        files[idx].content = e.source;
+      }
+      if (e.dialect) document.getElementById("cDialect").value = e.dialect;
+      if (e.stdin) stdinEl.value = e.stdin;
+      persistFiles();
+      rebuildSourceTabs(false);
+      openFileTab(idx);
+      renderFileList();
+      refreshLangUI();
+    }
+    // ----------------------------------------------------
+
+    async function doCompile() {
+      outputEl.textContent = "";
+      liveWatEl.textContent = "(compiling…)";
+      setStatus("compiling…");
+      commitActiveEdit();
+      // If the user opened an example via the Examples list and hits
+      // Compile without saving first, promote that preview into the
+      // workspace so compileBcplFile can resolve it AND a refresh
+      // doesn't lose the file. Browsing previews without compiling
+      // stays harmless (no auto-add).
+      promoteActivePreviewIfAny();
+      persistFiles();
+      clearCompileErrors();
+      clearCrash();
+      activateOutputTab("output");
+      {
+        const _entry = entryFile();         // language by entry-file extension
+        if (_entry && langOf(_entry.name) === "c") return await doCompileC(_entry);
+      }
+      const compileErrAcc = new Map();
+      let built = null;
+      try {
+        await seedBuiltinHeaders();
+        await attachShippedDeps();
+        seedUserFiles();
+
+        const allSources = files.filter(f => f.name.endsWith(".b"));
+        if (allSources.length === 0) throw new Error("no .b source files");
+        const entry = allSources.find(f => f.entry) ?? allSources[0];
+        const sources = resolveDeps(entry, files);
+        const libs    = sources.filter(f => f !== entry);
+
+        const skipped = allSources.filter(f => !sources.includes(f));
+        if (skipped.length) {
+          outputEl.textContent +=
+            `[deps] compiling ${sources.length} file(s); ` +
+            `skipped ${skipped.length} unreferenced: ` +
+            `${skipped.map(f => f.name).join(", ")}\n`;
+        }
+
+        const watByName = new Map();
+        for (const f of sources) {
+          setStatus(`compiling ${f.name}…`);
+          const toName = `__out_${f.name}.wat`;
+          const { wat, diagErrors } = await compileBcplFile(f.name, toName);
+          if (diagErrors && diagErrors.length) {
+            for (const e of diagErrors) {
+              if (!compileErrAcc.has(e.file)) compileErrAcc.set(e.file, []);
+              compileErrAcc.get(e.file).push(e);
+            }
+          }
+          watByName.set(f.name, wat);
+        }
+        liveWatEl.textContent = watByName.get(entry.name);
+
+        setStatus("assembling…");
+        const anyAsync = sources.some(s => srcNeedsAsyncify(s.content));
+        if (anyAsync) setStatus("asyncify pass…");
+        const assemble = async (src) => {
+          const chunks = splitModules(watByName.get(src.name));
+          const bufs = [];
+          for (let i = 0; i < chunks.length; i++) {
+            bufs.push(await assembleWat(chunks[i], `${src.name}#${i}`, anyAsync));
+          }
+          return bufs;
+        };
+        const libBufs = [];
+        for (const lib of libs) libBufs.push(await assemble(lib));
+        const entryBufs = await assemble(entry);
+        const modulesPerSource = [...libBufs.map(b => b.length), entryBufs.length];
+        built = { libBufs, entryBufs, modulesPerSource };
+        setStatus("compiled");
+      } catch (err) {
+        // Short status only — the full message lands in the Output tab
+        // and any parsed diagnostics show up in the Diagnostics tab.
+        setStatus("compile error", true);
+        outputEl.textContent += `\n[compile error] ${err.message ?? err}`;
+        console.error(err);
+        if (err.diagErrors && err.diagErrors.length) {
+          for (const e of err.diagErrors) {
+            if (!compileErrAcc.has(e.file)) compileErrAcc.set(e.file, []);
+            compileErrAcc.get(e.file).push(e);
+          }
+        }
+      }
+      if (compileErrAcc.size > 0) {
+        setCompileErrors(compileErrAcc);
+        activateOutputTab("diag");
+      } else {
+        syncEditor();
+        renderDiagnostics();
+      }
+      return built;
+    }
+
+    // Run an already-assembled build through a fresh BcplRuntime.
+    async function doRun(built) {
+      if (!built) return;
+      if (entryIsC()) return await doRunC(built);   // .c entry: own runtime
+      setStatus("loading…");
+      const rt = new BcplRuntime(
+        (s) => { outputEl.textContent += s; },
+        stdinEl.value
+      );
+      currentRt = rt;
+      lastMemRt = rt;
+      rt.onPause = (line) => {
+        setStatus(`paused at line ${line}`);
+        statusEl.classList.add("paused");
+        continueBtn.style.display = "";
+        continueBtn.disabled = false;
+        stepBtn.style.display = "";
+        stepBtn.disabled = false;
+        const entryName = (files.find(f => f.entry) ?? files[0])?.name;
+        setPausedLine(line, entryName);
+        if (entryName) {
+          const idx = files.findIndex(f => f.name === entryName);
+          if (idx >= 0) openFileTab(idx);
+        }
+        jumpToLine(line);
+        activateOutputTab("mem");
+      };
+      rt.onResume = () => {
+        statusEl.classList.remove("paused");
+        continueBtn.disabled = true;
+        stepBtn.disabled = true;
+      };
+      continueBtn.style.display = dbgModeEl.checked ? "" : "none";
+      stepBtn.style.display     = dbgModeEl.checked ? "" : "none";
+      stopBtn.disabled = false;
+      const canvasEl = document.getElementById("sdlCanvas");
+      const outputPaneEl = document.getElementById("outputPane");
+      outputPaneEl.classList.remove("with-canvas");
+      rt.setSdlCanvas(canvasEl, () => {
+        outputPaneEl.classList.add("with-canvas");
+        canvasEl.focus();
+      });
+      try {
+        await rt.loadMaster("master.wasm?v=" + V);
+        // Now that master is loaded, push the bp set in. Earlier
+        // ordering called setBreakpoints BEFORE loadMaster, so the
+        // _syncBpArmed helper early-returned (no master) and the
+        // master's $__bp_armed global stayed 0 — gate never fired.
+        rt.setBreakpoints(allBpLines());
+        for (const bufs of built.libBufs) {
+          for (const b of bufs) await rt.loadProgramFromBytes(b);
+        }
+        for (const b of built.entryBufs) await rt.loadProgramFromBytes(b);
+        const warn = rt.checkEntryOrdering(built.modulesPerSource);
+        if (warn) outputEl.textContent += `[warn] ${warn}\n`;
+        rt.initMaster();
+        setStatus("running…");
+        await rt.run();
+        setStatus(rt.aborted ? "stopped" : "ok");
+      } catch (err) {
+        // Status stays terse — Crash tab gets the detailed snapshot
+        // and the Output tab gets the raw message.
+        setStatus("runtime error", true);
+        outputEl.textContent += `\n[runtime error] ${err.message ?? err}`;
+        console.error(err);
+        if (currentRt) {
+          try {
+            const entryFile = (files.find(f => f.entry) ?? files[0])?.name;
+            const snap = currentRt.crashSnapshot(err);
+            renderCrash(snap, { phase: "runtime", entryFile });
+          } catch (e) { console.error("crashSnapshot failed", e); }
+        }
+      } finally {
+        stopBtn.disabled = true;
+        currentRt = null;
+      }
+    }
+
+    async function compileAndRun() {
+      if (compileBtn.disabled) return;
+      compileBtn.disabled = true;
+      compileOnlyBtn.disabled = true;
+      runOnlyBtn.disabled = true;
+      try {
+        const built = await doCompile();
+        if (built) {
+          lastBuilt = built;
+          // Wasm tab disasm is keyed by entry-chunk byte length —
+          // a fresh build with a coincidentally-matching length
+          // would otherwise hit a stale cache entry. Drop it.
+          wasmDisasmCache = null;
+          runOnlyBtn.disabled = false;
+          await doRun(built);
+        }
+      } finally {
+        compileBtn.disabled = false;
+        compileOnlyBtn.disabled = false;
+      }
+    }
+    async function compileOnly() {
+      if (compileBtn.disabled) return;
+      compileBtn.disabled = true;
+      compileOnlyBtn.disabled = true;
+      runOnlyBtn.disabled = true;
+      try {
+        const built = await doCompile();
+        if (built) {
+          lastBuilt = built;
+          // Wasm tab disasm is keyed by entry-chunk byte length —
+          // a fresh build with a coincidentally-matching length
+          // would otherwise hit a stale cache entry. Drop it.
+          wasmDisasmCache = null;
+          runOnlyBtn.disabled = false;
+        }
+      } finally {
+        compileBtn.disabled = false;
+        compileOnlyBtn.disabled = false;
+      }
+    }
+    async function runOnly() {
+      if (!lastBuilt) return;
+      if (compileBtn.disabled) return;
+      compileBtn.disabled = true;
+      compileOnlyBtn.disabled = true;
+      runOnlyBtn.disabled = true;
+      try {
+        await doRun(lastBuilt);
+      } finally {
+        compileBtn.disabled = false;
+        compileOnlyBtn.disabled = false;
+        runOnlyBtn.disabled = !lastBuilt;
+      }
+    }
+    stopBtn.addEventListener("click", () => {
+      if (currentRt) {
+        currentRt.abort();
+        setStatus("stopping…");
+      }
+    });
+
+    // Persist debugger toggle. Survives reload so users don't have to
+    // re-enable it after every refresh.
+    const DBG_KEY = "bcpl-playground-debugger";
+    dbgModeEl.checked = localStorage.getItem(DBG_KEY) === "1";
+    dbgModeEl.addEventListener("change", () => {
+      localStorage.setItem(DBG_KEY, dbgModeEl.checked ? "1" : "0");
+      syncEditor();           // refresh gutter (bp dots toggle visibility)
+      // Toggling Debug mode changes whether srcNeedsAsyncify forces
+      // asyncify on. Without asyncify imp_break can't unwind, so a
+      // cached non-asyncified build silently no-ops at breakpoints.
+      // Invalidate so Run-only is greyed out and the next click goes
+      // through a full Compile (which will pick up the new mode).
+      invalidateLastBuilt();
+    });
+
+    continueBtn.addEventListener("click", () => {
+      if (currentRt && currentRt.isPaused()) {
+        currentRt.resume();
+        setStatus("running…");
+        clearPausedLine();
+        continueBtn.disabled = true;
+        stepBtn.disabled = true;
+      }
+    });
+    stepBtn.addEventListener("click", () => {
+      if (currentRt && currentRt.isPaused()) {
+        currentRt.step();
+        setStatus("stepping…");
+        clearPausedLine();
+        continueBtn.disabled = true;
+        stepBtn.disabled = true;
+      }
+    });
+
+    // Fullscreen toggle on the SDL canvas. Browsers gate the
+    // Fullscreen API behind a user gesture, so this lives on a click
+    // handler rather than firing automatically on sdl_init.
+    document.getElementById("canvasFullscreen").addEventListener("click", () => {
+      const canvas = document.getElementById("sdlCanvas");
+      if (document.fullscreenElement) {
+        document.exitFullscreen?.();
+      } else {
+        canvas.requestFullscreen?.().then(() => canvas.focus()).catch(() => {});
+      }
+    });
+
+    // ------------------ Wiring ------------------
+    compileBtn.addEventListener("click", compileAndRun);
+    compileOnlyBtn.addEventListener("click", compileOnly);
+    runOnlyBtn.addEventListener("click", runOnly);
+    document.getElementById("addFile").addEventListener("click", addFile);
+    document.getElementById("renameFile").addEventListener("click", renameFile);
+    savePreviewBtn.addEventListener("click", promotePreview);
+    prevLessonBtn.addEventListener("click", goPrevLesson);
+    nextLessonBtn.addEventListener("click", goNextLesson);
+    apiFilterEl.addEventListener("input", () => renderApiList(apiFilterEl.value));
+    // macOS "Add period with double-space" lives in the system text
+    // input layer, below autocorrect="off". The substitution arrives as
+    // a single beforeinput/input with data ". " — either inputType
+    // insertReplacementText (deliberate replace) or insertText (when
+    // the system batches the two fast keystrokes into one event).
+    // Normal user typing of ". " never produces a single event with
+    // data === ". " because each keystroke fires its own insertText.
+    const isPeriodSub = (e) =>
+      e.data === ". " &&
+      (e.inputType === "insertReplacementText" ||
+       e.inputType === "insertText");
+
+    userSrcEl.addEventListener("beforeinput", (e) => {
+      if (!isPeriodSub(e)) return;
+      e.preventDefault();
+      // Insert two spaces at the caret instead — preserves the user's
+      // double-space intent for both replace-style and batched-text
+      // variants of the substitution.
+      const pos = userSrcEl.selectionEnd;
+      const v = userSrcEl.value;
+      userSrcEl.value = v.slice(0, pos) + "  " + v.slice(pos);
+      userSrcEl.selectionStart = userSrcEl.selectionEnd = pos + 2;
+      userSrcEl.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    userSrcEl.addEventListener("input", (e) => {
+      // Fallback: if beforeinput's preventDefault didn't take (some
+      // browsers fire input first or skip cancellation for batched
+      // text), undo the substitution after the fact.
+      if (isPeriodSub(e)) {
+        const pos = userSrcEl.selectionEnd;
+        const v = userSrcEl.value;
+        if (v.slice(pos - 2, pos) === ". ") {
+          userSrcEl.value = v.slice(0, pos - 2) + "  " + v.slice(pos);
+          userSrcEl.selectionStart = userSrcEl.selectionEnd = pos;
+        }
+      }
+      syncEditor();
+      let i = activeFileIdx();
+      if (i < 0) {
+        // Editing a preview tab — promote it to a real workspace
+        // file so the edit (and content) survive a refresh.
+        i = promoteActivePreviewIfAny();
+        if (i < 0) return;   // not a preview either — readonly tab
+      }
+      files[i].content = userSrcEl.value;
+      persistFiles();
+      invalidateLastBuilt();
+    });
+
+    // ------------------ Editor: line numbers + highlight ------------
+    // Reserved words per bcplsyn.b:declsyswords(). Keep in sync.
+    const BCPL_KW = new Set([
+      // Structure / decls
+      "SECTION","GET","NEEDS","LET","AND","BE","VALOF","TABLE",
+      "MANIFEST","GLOBAL","STATIC","VEC","RESULTIS","RETURN","FINISH",
+      // Control flow
+      "IF","UNLESS","TEST","THEN","ELSE","OR",
+      "WHILE","UNTIL","FOR","TO","BY","DO",
+      "REPEAT","REPEATWHILE","REPEATUNTIL",
+      "LOOP","BREAK","NEXT","EXIT","SKIP",
+      "SWITCHON","CASE","DEFAULT","ENDCASE","INTO","GOTO",
+      // Pattern match
+      "MATCH","EVERY",
+      // Constants
+      "TRUE","FALSE","BITSPERBCPLWORD",
+      // Word-form operators
+      "MOD","REM","XOR","NEQV","EQV","NOT","ABS",
+      "LOGAND","LOGOR","LSHIFT","RSHIFT",
+      "EQ","NE","LS","GR","LE","GE",
+      "LV","RV","OF","SLCT",
+      // Type / coercion
+      "FLT","FIX","FLOAT",
+    ]);
+    function escHtml(s) {
+      return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+    function highlightBCPL(src) {
+      const out = [];
+      let i = 0, n = src.length;
+      while (i < n) {
+        const c = src[i];
+        // Line comment: // … EOL
+        if (c === "/" && src[i+1] === "/") {
+          let j = src.indexOf("\n", i);
+          if (j < 0) j = n;
+          out.push(`<span class="tok-com">${escHtml(src.slice(i, j))}</span>`);
+          i = j; continue;
+        }
+        // Block comment: /* … */
+        if (c === "/" && src[i+1] === "*") {
+          let j = src.indexOf("*/", i + 2);
+          j = j < 0 ? n : j + 2;
+          out.push(`<span class="tok-com">${escHtml(src.slice(i, j))}</span>`);
+          i = j; continue;
+        }
+        // String literal: "..." with *X escape
+        if (c === '"') {
+          let j = i + 1;
+          while (j < n && src[j] !== '"' && src[j] !== "\n") {
+            if (src[j] === "*" && j + 1 < n) j += 2; else j++;
+          }
+          if (j < n && src[j] === '"') j++;
+          out.push(`<span class="tok-str">${escHtml(src.slice(i, j))}</span>`);
+          i = j; continue;
+        }
+        // Char literal: 'c' or '*N'
+        if (c === "'") {
+          let j = i + 1;
+          while (j < n && src[j] !== "'" && src[j] !== "\n") {
+            if (src[j] === "*" && j + 1 < n) j += 2; else j++;
+          }
+          if (j < n && src[j] === "'") j++;
+          out.push(`<span class="tok-str">${escHtml(src.slice(i, j))}</span>`);
+          i = j; continue;
+        }
+        // #x / #b / #o numeric literals
+        if (c === "#" && /[xXbBoO]/.test(src[i+1] ?? "")) {
+          const m = src.slice(i).match(/^#[xX][0-9a-fA-F]+|^#[bB][01]+|^#[oO][0-7]+/);
+          if (m) {
+            out.push(`<span class="tok-num">${escHtml(m[0])}</span>`);
+            i += m[0].length; continue;
+          }
+        }
+        // Decimal number
+        if (/[0-9]/.test(c)) {
+          let j = i;
+          while (j < n && /[0-9]/.test(src[j])) j++;
+          out.push(`<span class="tok-num">${escHtml(src.slice(i, j))}</span>`);
+          i = j; continue;
+        }
+        // Identifier or keyword
+        if (/[a-zA-Z_]/.test(c)) {
+          let j = i;
+          while (j < n && /[a-zA-Z0-9_]/.test(src[j])) j++;
+          const tok = src.slice(i, j);
+          if (BCPL_KW.has(tok)) {
+            out.push(`<span class="tok-kw">${escHtml(tok)}</span>`);
+          } else {
+            out.push(escHtml(tok));
+          }
+          i = j; continue;
+        }
+        // Multi-char operators
+        if (i + 1 < n) {
+          const two = src.slice(i, i+2);
+          if (two === ":=" || two === "->" || two === "~=" ||
+              two === "<=" || two === ">=" || two === "<<" || two === ">>" ||
+              two === ".." || two === "@!" || two === "::") {
+            out.push(`<span class="tok-op">${escHtml(two)}</span>`);
+            i += 2; continue;
+          }
+        }
+        // Single-char operators
+        if ("+-*/=<>!@&|~%^".indexOf(c) >= 0) {
+          out.push(`<span class="tok-op">${escHtml(c)}</span>`);
+          i++; continue;
+        }
+        // Default: pass through (escaped)
+        out.push(escHtml(c));
+        i++;
+      }
+      return out.join("");
+    }
+    // Compile-error overlays. Keyed by filename (basename). Each value
+    // is an array of { line, msg, fnName? }. setCompileErrors() updates
+    // the map then re-syncs the editor so gutter dots + err-bands
+    // refresh. Persists across edits — caller clears explicitly.
+    const errorsByFile = new Map();
+    // Active breakpoints. Map<filename, Set<lineNumber>>. Survives
+    // recompiles within a session; persisted to localStorage so they
+    // survive reloads. Gutter clicks (when Debugger toggle on) flip
+    // a line in this set, then push the union of all bp lines to
+    // the runtime via setBreakpoints() before run().
+    const bpByFile = new Map();
+    const BP_KEY = "bcpl-playground-bps";
+    try {
+      const raw = localStorage.getItem(BP_KEY);
+      if (raw) {
+        const obj = JSON.parse(raw);
+        for (const [f, arr] of Object.entries(obj)) bpByFile.set(f, new Set(arr));
+      }
+    } catch { /* corrupt persist — start fresh */ }
+    function persistBps() {
+      const obj = {};
+      for (const [f, s] of bpByFile) if (s.size) obj[f] = [...s];
+      try { localStorage.setItem(BP_KEY, JSON.stringify(obj)); } catch {}
+    }
+    function toggleBp(file, line) {
+      if (!bpByFile.has(file)) bpByFile.set(file, new Set());
+      const s = bpByFile.get(file);
+      if (s.has(line)) s.delete(line); else s.add(line);
+      if (!s.size) bpByFile.delete(file);
+      persistBps();
+      syncEditor();
+      // Live update — push to running rt if present.
+      if (currentRt) currentRt.setBreakpoints(allBpLines());
+    }
+    // Lines to arm in the runtime's breakpoint set.
+    //   - In release mode: empty. The codegen-emitted gate stays
+    //     dormant so per-statement (call $__break) cost is zero.
+    //   - In debug mode: only lines from files actually present in
+    //     the current workspace. Stale bps for files no longer in
+    //     files[] (renamed / removed / different workspace) would
+    //     otherwise fire as "phantom" hits because $__line carries
+    //     no file id — every file with the same line number matches.
+    function allBpLines() {
+      if (!dbgModeEl.checked || entryIsC()) return [];
+      const liveNames = new Set(files.map(f => f.name));
+      const out = [];
+      for (const [name, s] of bpByFile) {
+        if (!liveNames.has(name)) continue;
+        for (const n of s) out.push(n);
+      }
+      return out;
+    }
+    const errBandsEl = document.getElementById("errBands");
+
+    function activeFileName() {
+      const i = activeFileIdx();
+      return i >= 0 ? files[i].name : null;
+    }
+    function setCompileErrors(map) {
+      errorsByFile.clear();
+      for (const [name, list] of map) errorsByFile.set(name, list.slice());
+      syncEditor();
+      renderDiagnostics();
+    }
+    function clearCompileErrors() {
+      if (errorsByFile.size === 0) return;
+      errorsByFile.clear();
+      syncEditor();
+      renderDiagnostics();
+    }
+
+    function totalErrorCount() {
+      let n = 0;
+      for (const list of errorsByFile.values()) n += list.length;
+      return n;
+    }
+
+    // Repaint the Diagnostics tab and update the tab-strip badge.
+    function renderDiagnostics() {
+      const n = totalErrorCount();
+      diagTabBtnEl.classList.toggle("has-errors", n > 0);
+      diagTabBtnEl.textContent = n > 0 ? `Diagnostics (${n})` : "Diagnostics";
+      if (n === 0) {
+        diagBodyEl.textContent = "no compile errors";
+        return;
+      }
+      const rows = [];
+      for (const [file, list] of errorsByFile) {
+        for (const e of list) {
+          const fnTxt = e.fnName ? ` <span class="diag-fn">in ${escHtml(e.fnName)}</span>` : "";
+          rows.push(
+            `<div class="diag-row" data-file="${escHtml(file)}" data-line="${e.line}">` +
+            `<span class="diag-loc">${escHtml(file)}:${e.line}</span>${fnTxt}  ` +
+            `<span class="diag-msg">${escHtml(e.msg)}</span>` +
+            `</div>`
+          );
+        }
+      }
+      diagBodyEl.innerHTML = rows.join("\n");
+    }
+
+    diagBodyEl.addEventListener("click", (e) => {
+      const row = e.target.closest(".diag-row");
+      if (!row) return;
+      const file = row.getAttribute("data-file");
+      const line = parseInt(row.getAttribute("data-line"), 10);
+      const idx = files.findIndex(f => f.name === file);
+      if (idx >= 0) openFileTab(idx);
+      jumpToLine(line);
+    });
+
+    // Render a crashSnapshot() result into the Crash tab and bring
+    // the tab forward. Called by compileAndRun's catch arm when a
+    // non-BcplHalt throw escapes rt.run().
+    function renderCrash(snap, ctx = {}) {
+      crashTabBtnEl.classList.add("has-errors");
+      const hex = (n) => "0x" + (n >>> 0).toString(16).padStart(8, "0");
+      const lines = [];
+      lines.push(`message:  ${snap.message}`);
+      if (ctx.phase) lines.push(`phase:    ${ctx.phase}`);
+      lines.push(`aborted:  ${snap.aborted}`);
+      if (snap.line > 0) {
+        const fileTxt = ctx.entryFile ? ` (${ctx.entryFile} — multi-file: line may belong to a GET'd source)` : "";
+        lines.push(`line:     ${snap.line}${fileTxt}`);
+      } else {
+        lines.push(`line:     (unknown — backend may pre-date s_line tracking)`);
+      }
+      lines.push(`P:        ${snap.P}  (heapTop ${snap.heapTop}, freeList ${snap.freeList})`);
+
+      // Auto-paint "you are here" overlay + jump editor to the line.
+      if (snap.line > 0) {
+        setPausedLine(snap.line, ctx.entryFile);
+        if (ctx.entryFile) {
+          const idx = files.findIndex(f => f.name === ctx.entryFile);
+          if (idx >= 0) openFileTab(idx);
+        }
+        jumpToLine(snap.line);
+      }
+
+      if (snap.lastSysOp) {
+        const a = snap.lastSysOp.args;
+        lines.push(`<span class="cr-section">last sys() call</span>`);
+        lines.push(`<span class="cr-row">op=${snap.lastSysOp.op}  args=[${a.join(", ")}]</span>`);
+      }
+
+      if (snap.sysOpHistory && snap.sysOpHistory.length > 1) {
+        lines.push(`<span class="cr-section">recent sys() ops (oldest → newest)</span>`);
+        for (const r of snap.sysOpHistory) {
+          lines.push(`<span class="cr-row">op=${r.op}  args=[${r.args.slice(0, 4).join(", ")}…]</span>`);
+        }
+      }
+
+      if (snap.frames.length) {
+        lines.push(`<span class="cr-section">P-chain (most-recent first)</span>`);
+        for (const f of snap.frames) {
+          const args = f.args.slice(0, 4).map(hex).join(" ");
+          lines.push(
+            `<span class="cr-row">` +
+            `P=${f.P}  prevP=${f.prevP}  fnIdx=${f.fnIdx}  ret=${f.retLab}  ` +
+            `args=[${args}]` +
+            `</span>`
+          );
+        }
+      }
+
+      lines.push(`<span class="cr-section">globals G!1..G!100 (non-zero)</span>`);
+      const nonZero = snap.globals.filter(g => g.val !== 0);
+      if (nonZero.length === 0) {
+        lines.push(`<span class="cr-row">(all zero)</span>`);
+      } else {
+        for (const g of nonZero) {
+          lines.push(`<span class="cr-row">G!${g.g + 1} = ${hex(g.val)} (${g.val})</span>`);
+        }
+      }
+
+      lines.push(`<span class="cr-section">stack window @ P</span>`);
+      for (const s of snap.stackTop) {
+        const mark = s.isP ? " ← P" : "";
+        lines.push(`<span class="cr-row">[${s.w}] = ${hex(s.val)}${mark}</span>`);
+      }
+
+      if (snap.stack) {
+        lines.push(`<span class="cr-section">JS stack</span>`);
+        lines.push(`<span class="cr-row">${escHtml(snap.stack)}</span>`);
+      }
+
+      crashBodyEl.innerHTML = lines.join("\n");
+      activateOutputTab("crash");
+    }
+
+    function clearCrash() {
+      crashTabBtnEl.classList.remove("has-errors");
+      crashBodyEl.textContent = "no crash";
+      clearPausedLine();
+    }
+
+    // "You are here" indicator. line=N highlights line N in the editor
+    // with a yellow band; file= names the source file the line belongs
+    // to (so the overlay only renders when that tab is the active
+    // editor view). Called by renderCrash and any future
+    // breakpoint/pause path. Stored separately from the per-statement
+    // err bands so toggling tabs preserves it.
+    let pausedLine = 0;
+    let pausedFile = null;
+    function setPausedLine(line, file) {
+      pausedLine = line | 0;
+      pausedFile = file || null;
+      syncEditor();
+    }
+    function clearPausedLine() {
+      if (!pausedLine) return;
+      pausedLine = 0;
+      pausedFile = null;
+      syncEditor();
+    }
+
+    // ------------------ Memory tab ----------------------------------
+    // Held across runs. compileAndRun sets this to the active rt
+    // while a program is loaded; on crash we keep the layout snapshot
+    // so the user can poke around after currentRt is dropped.
+    let lastMemRt = null;
+    let lastMemLayout = null;
+
+    function regionToRange(region, layout) {
+      switch (region) {
+        case "globals": return { start: 1,       count: 300 };
+        case "static":  return { start: layout.staticBase,
+                                 count: Math.max(16, layout.staticTop - layout.staticBase) };
+        case "stack":   return { start: Math.max(0, layout.P - 16), count: 64 };
+        case "heap":    return { start: Math.max(0, layout.heapTop - 16), count: 64 };
+        default:        return null;
+      }
+    }
+
+    function fmtHex32(n) {
+      return (n >>> 0).toString(16).padStart(8, "0");
+    }
+    function fmtAscii(words) {
+      const out = [];
+      for (const w of words) {
+        for (let b = 0; b < 4; b++) {
+          const c = (w >> (b * 8)) & 0xFF;
+          out.push((c >= 0x20 && c < 0x7F) ? String.fromCharCode(c) : ".");
+        }
+      }
+      return out.join("");
+    }
+
+    function renderMemDump(start, words, layout) {
+      const rows = [];
+      const COLS = 4;
+      const Pword = layout ? layout.P : -1;
+      // BCPL globals live at word slots 1..gLen. G is word 1 in the
+      // playground, so word-addr N corresponds to global slot N (zero
+      // is reserved). Annotate cells in that range with the libhdr.h
+      // name (or "G!N" if unknown). Outside the range we add no name.
+      const gBase = layout ? layout.G : 1;
+      const gLast = layout ? gBase + (layout.gLen ?? 1000) - 1 : 0;
+      const slotName = (a) => {
+        if (a < gBase || a > gLast) return null;
+        const slot = a - gBase + 1;
+        return gnumToName.get(slot) ?? null;
+      };
+      for (let i = 0; i < words.length; i += COLS) {
+        const addr = start + i;
+        const ws = [];
+        for (let j = 0; j < COLS && i + j < words.length; j++) ws.push(words[i + j]);
+        const wHex = ws.map((w, j) => {
+          const cls = w === 0 ? "mem-zero" : "";
+          const mark = (addr + j === Pword) ? "mem-marker" : cls;
+          return `<span class="${mark}">${fmtHex32(w)}</span>`;
+        }).join(" ");
+        const ascii = fmtAscii(ws);
+        const pMark = (Pword >= addr && Pword < addr + COLS) ? " ← P" : "";
+        // Global-slot annotation. Skipped when no cell in the row
+        // sits in the globals range or has a known name. Format:
+        // "G!N=name ..." per known cell, joined with " · ".
+        const nameParts = [];
+        for (let j = 0; j < ws.length; j++) {
+          const a = addr + j;
+          const nm = slotName(a);
+          if (nm) nameParts.push(`G!${a - gBase + 1}=${nm}`);
+        }
+        const nameTail = nameParts.length
+          ? `  <span class="mem-gname">${escHtml(nameParts.join(" · "))}</span>`
+          : "";
+        rows.push(
+          `<span class="mem-addr">[${String(addr).padStart(7)}]</span>  ${wHex}  ${escHtml(ascii)}${pMark}${nameTail}`
+        );
+      }
+      return rows.join("\n");
+    }
+
+    // Refresh re-reads current start/count from the inputs without
+    // rewriting them. Region change is what seeds defaults — once seeded,
+    // user can scroll the window by editing start/count freely.
+    // Globals render: one row per slot with name + hex + decimal.
+    // Drops the 4-cols hex grid in favor of a key/value table — much
+    // easier to scan for "what does G!N hold right now". Hides slots
+    // beyond the highest non-zero or named entry in the requested
+    // window so the bottom doesn't fill with empty G!413..G!1000.
+    function renderGlobalsList(start, words, layout) {
+      const gBase = layout ? layout.G : 1;
+      const rows = [];
+      // Trim trailing all-zero unnamed slots from the view.
+      let last = words.length - 1;
+      while (last > 0) {
+        const slot = (start + last) - gBase + 1;
+        const named = gnumToName.get(slot);
+        if (words[last] !== 0 || named) break;
+        last--;
+      }
+      // Filter: case-insensitive substring match against "G!N" or
+      // the libhdr name. Empty filter matches everything.
+      const q = (memGlobFilterEl.value || "").trim().toLowerCase();
+      let shown = 0;
+      for (let i = 0; i <= last; i++) {
+        const addr = start + i;
+        const slot = addr - gBase + 1;
+        const w = words[i];
+        const named = gnumToName.get(slot);
+        if (q) {
+          const slotKey = `g!${slot}`;
+          const nameKey = (named || "").toLowerCase();
+          if (!slotKey.includes(q) && !nameKey.includes(q)) continue;
+        }
+        const slotLabel = `G!${String(slot).padStart(4)}`;
+        const name = (named ? named : "—").padEnd(20).slice(0, 20);
+        const hex = fmtHex32(w);
+        const dec = w === 0 ? "" : `(${w | 0})`;
+        const nameCls = named ? "mem-gname" : "mem-zero";
+        const valCls  = w === 0 ? "mem-zero" : "";
+        rows.push(
+          `<span class="mem-addr">${slotLabel}</span>  ` +
+          `<span class="${nameCls}">${escHtml(name)}</span>  ` +
+          `<span class="${valCls}">${hex}</span> ${escHtml(dec)}`
+        );
+        shown++;
+      }
+      if (q && shown === 0) {
+        rows.push(`<span class="mem-zero">(no globals match "${escHtml(q)}")</span>`);
+      }
+      return rows.join("\n");
+    }
+
+    function refreshMemory() {
+      const rt = currentRt ?? lastMemRt;
+      if (!rt) {
+        memDumpEl.textContent = "no runtime loaded yet — Compile & Run first";
+        memInfoEl.textContent = "";
+        return;
+      }
+      lastMemRt = rt;
+      const layout = rt.memLayout();
+      lastMemLayout = layout;
+      const start = parseInt(memStartEl.value, 10) | 0;
+      const count = Math.min(2048, Math.max(1, parseInt(memCountEl.value, 10) | 0));
+      const words = rt.readWords(start, count);
+      // Globals region uses the key/value list. Stack / Heap / Static
+      // / Custom stay on the hex dump — raw bytes matter there.
+      const useGlobals = memRegionEl.value === "globals";
+      // Filter box is only meaningful for the globals view.
+      memGlobFilterEl.style.display = useGlobals ? "" : "none";
+      memDumpEl.innerHTML = useGlobals
+        ? renderGlobalsList(start, words, layout)
+        : renderMemDump(start, words, layout);
+      memInfoEl.textContent =
+        `P=${layout.P}  line=${layout.line}  heapTop=${layout.heapTop}  ` +
+        `static=${layout.staticBase}..${layout.staticTop}  ` +
+        `mem=${(layout.memBytes / 1024 / 1024).toFixed(1)}MB`;
+    }
+    function seedFromRegion() {
+      const rt = currentRt ?? lastMemRt;
+      const layout = rt ? rt.memLayout() : lastMemLayout;
+      if (!layout) { refreshMemory(); return; }
+      const r = regionToRange(memRegionEl.value, layout);
+      if (r) {
+        memStartEl.value = r.start;
+        memCountEl.value = r.count;
+      }
+      refreshMemory();
+    }
+    memRegionEl.addEventListener("change", seedFromRegion);
+    memRefreshEl.addEventListener("click", refreshMemory);
+    memStartEl.addEventListener("change", refreshMemory);
+    memCountEl.addEventListener("change", refreshMemory);
+    memStartEl.addEventListener("input", refreshMemory);
+    memGlobFilterEl.addEventListener("input", refreshMemory);
+    memCountEl.addEventListener("input", refreshMemory);
+
+    function syncEditor() {
+      const src = userSrcEl.value;
+      const lines = src.split("\n").length;
+      const name = activeFileName();
+      const errs = name ? (errorsByFile.get(name) ?? []) : [];
+      const errByLine = new Map();
+      for (const e of errs) {
+        if (!errByLine.has(e.line)) errByLine.set(e.line, []);
+        errByLine.get(e.line).push(e);
+      }
+      // Gutter — per-line spans for error dot + breakpoint dot.
+      // Breakpoints render only when Debugger toggle is on so the
+      // gutter doesn't get noisy in non-debug sessions.
+      const bps = (dbgModeEl?.checked && name && langOf(name) === "bcpl")
+        ? (bpByFile.get(name) ?? new Set())
+        : new Set();
+      const parts = [];
+      for (let k = 1; k <= lines; k++) {
+        const list = errByLine.get(k);
+        const cls = ["gut-line"];
+        let title = "";
+        if (list) {
+          cls.push("err");
+          title = ` title="${list.map(e => e.msg).join(" | ").replace(/"/g, "&quot;")}"`;
+        }
+        if (bps.has(k)) {
+          cls.push("bp");
+          if (!title) title = ` title="breakpoint — click to remove"`;
+        }
+        parts.push(`<span class="${cls.join(" ")}" data-line="${k}"${title}>${k}</span>`);
+      }
+      editorGutterEl.innerHTML = parts.join("");
+
+      editorHlEl.innerHTML = highlightBCPL(src) + "\n";
+
+      // Error-line bands. Position each band at top = (line-1) * lineH
+      // + paddingTop, height = lineH. Reads computed line-height to
+      // stay correct across font-size tweaks.
+      const cs = window.getComputedStyle(editorHlEl);
+      const lh = parseFloat(cs.lineHeight) || 19;
+      const padTop = parseFloat(cs.paddingTop) || 0;
+      errBandsEl.innerHTML = "";
+      for (const e of errs) {
+        if (e.line < 1 || e.line > lines) continue;
+        const d = document.createElement("div");
+        d.className = "err-band";
+        d.style.top = `${padTop + (e.line - 1) * lh - userSrcEl.scrollTop}px`;
+        d.style.height = `${lh}px`;
+        errBandsEl.appendChild(d);
+      }
+      // Paused-line ("you are here") overlay. Renders only when the
+      // active file matches the paused file (or no pause is set).
+      if (pausedLine > 0 && pausedLine <= lines &&
+          (!pausedFile || pausedFile === name)) {
+        const d = document.createElement("div");
+        d.className = "pause-band";
+        d.style.top = `${padTop + (pausedLine - 1) * lh - userSrcEl.scrollTop}px`;
+        d.style.height = `${lh}px`;
+        errBandsEl.appendChild(d);
+      }
+
+      editorHlEl.scrollTop  = userSrcEl.scrollTop;
+      editorHlEl.scrollLeft = userSrcEl.scrollLeft;
+      editorGutterEl.scrollTop = userSrcEl.scrollTop;
+    }
+    function setEditorContent(v) {
+      userSrcEl.value = v;
+      syncEditor();
+    }
+    userSrcEl.addEventListener("scroll", () => {
+      editorHlEl.scrollTop  = userSrcEl.scrollTop;
+      editorHlEl.scrollLeft = userSrcEl.scrollLeft;
+      editorGutterEl.scrollTop = userSrcEl.scrollTop;
+      // Bands sit in the hl-wrap (not in the scrolling textarea), so
+      // they need their top offset adjusted by the current scroll.
+      const cs = window.getComputedStyle(editorHlEl);
+      const lh = parseFloat(cs.lineHeight) || 19;
+      const padTop = parseFloat(cs.paddingTop) || 0;
+      const bands = errBandsEl.children;
+      const name = activeFileName();
+      const errs = name ? (errorsByFile.get(name) ?? []) : [];
+      for (let i = 0; i < bands.length && i < errs.length; i++) {
+        bands[i].style.top =
+          `${padTop + (errs[i].line - 1) * lh - userSrcEl.scrollTop}px`;
+      }
+      // Pause band (always last child if present).
+      const last = bands[bands.length - 1];
+      if (last && last.classList.contains("pause-band") && pausedLine > 0) {
+        last.style.top =
+          `${padTop + (pausedLine - 1) * lh - userSrcEl.scrollTop}px`;
+      }
+    });
+
+    // Gutter click:
+    //   - Debugger mode on, plain line → toggle breakpoint.
+    //   - Error line → focus that line in the editor.
+    //   - Error line WITH debugger mode → still toggle bp (error
+    //     dot + bp dot share the gutter; bp wins so devs can set
+    //     a bp at an erroring line to inspect post-fix).
+    editorGutterEl.addEventListener("click", (e) => {
+      const sp = e.target.closest(".gut-line");
+      if (!sp) return;
+      const line = parseInt(sp.getAttribute("data-line"), 10);
+      const file = activeFileName();
+      if (dbgModeEl?.checked && file && langOf(file) === "bcpl") {
+        toggleBp(file, line);
+        return;
+      }
+      if (sp.classList.contains("err")) jumpToLine(line);
+    });
+
+    function jumpToLine(line) {
+      const src = userSrcEl.value;
+      let pos = 0;
+      for (let k = 1; k < line; k++) {
+        const nl = src.indexOf("\n", pos);
+        if (nl < 0) { pos = src.length; break; }
+        pos = nl + 1;
+      }
+      userSrcEl.focus();
+      userSrcEl.selectionStart = userSrcEl.selectionEnd = pos;
+      const cs = window.getComputedStyle(editorHlEl);
+      const lh = parseFloat(cs.lineHeight) || 19;
+      userSrcEl.scrollTop = Math.max(0, (line - 3) * lh);
+    }
+
+    // ------------------ Theme toggle ----------------------------------
+    const THEME_LS_KEY = "bcpl-playground-theme";
+    function applyTheme(name) {
+      if (name === "light") document.documentElement.setAttribute("data-theme", "light");
+      else document.documentElement.removeAttribute("data-theme");
+      themeToggleEl.textContent = name === "light" ? "☾" : "☀︎";
+    }
+    applyTheme(localStorage.getItem(THEME_LS_KEY) || "light");
+    themeToggleEl.addEventListener("click", () => {
+      const cur = document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
+      const next = cur === "light" ? "dark" : "light";
+      applyTheme(next);
+      localStorage.setItem(THEME_LS_KEY, next);
+    });
+
+    // Output pane collapse — persisted; gives the editor the full row
+    // when the user just wants to see code.
+    const OUTPUT_COLLAPSE_LS_KEY = "bcpl-playground-output-collapsed";
+    const outputCollapseBtn = document.getElementById("outputCollapse");
+    function applyOutputCollapse(state) {
+      document.body.classList.toggle("output-collapsed", state);
+      outputCollapseBtn.textContent = state ? "▴" : "▾";
+      outputCollapseBtn.title = state ? "expand output pane" : "collapse output pane";
+    }
+    applyOutputCollapse(localStorage.getItem(OUTPUT_COLLAPSE_LS_KEY) === "1");
+    outputCollapseBtn.addEventListener("click", () => {
+      const collapsed = !document.body.classList.contains("output-collapsed");
+      applyOutputCollapse(collapsed);
+      localStorage.setItem(OUTPUT_COLLAPSE_LS_KEY, collapsed ? "1" : "0");
+    });
+
+    // ------------------ URL-based file references --------------------
+    // Supported params (query string OR # hash):
+    //   example=<slug>          open a built-in example as a preview tab
+    //   src=<base64url>         decode and add (or replace) a single file
+    //   name=<filename>         optional name for src= / url= payload
+    //   url=<full URL>          fetch raw text and add as a file
+    //   gh=<user>/<repo>/<branch>/<path>
+    //                           shorthand for raw.githubusercontent.com
+    //   bundle=<base64url>      multi-file payload: a self-contained
+    //                           snapshot of the workspace. Bytes carry
+    //                           a one-byte format tag (see below).
+    function readUrlParams() {
+      const q = new URLSearchParams(location.search);
+      const h = new URLSearchParams(location.hash.replace(/^#/, ""));
+      const get = (k) => q.get(k) ?? h.get(k);
+      return {
+        example: get("example"),
+        src:     get("src"),
+        name:    get("name"),
+        url:     get("url"),
+        gh:      get("gh"),
+        bundle:  get("bundle"),
+      };
+    }
+    function decodeB64Url(s) {
+      try {
+        s = s.replace(/-/g, "+").replace(/_/g, "/");
+        s += "=".repeat((4 - s.length % 4) % 4);
+        const bin = atob(s);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        return new TextDecoder().decode(bytes);
+      } catch { return null; }
+    }
+    function encodeB64Url(s) {
+      const bytes = new TextEncoder().encode(s);
+      let bin = "";
+      for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+      return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    }
+    // Raw-bytes variants for bundle payload (tag byte + binary data).
+    function bytesToB64Url(bytes) {
+      let bin = "";
+      for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+      return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    }
+    function b64UrlToBytes(s) {
+      try {
+        s = s.replace(/-/g, "+").replace(/_/g, "/");
+        s += "=".repeat((4 - s.length % 4) % 4);
+        const bin = atob(s);
+        const out = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+        return out;
+      } catch { return null; }
+    }
+    // Bundle format: byte 0 = 'J' (0x4A) plain JSON, or 'Z' (0x5A)
+    // deflate-raw of JSON. Bytes 1.. = payload.
+    //
+    // Shipped libs (doomengine.b etc.) are EXCLUDED from the bundle —
+    // the recipient's playground auto-attaches them from site/examples/
+    // via attachShippedDeps(), so re-shipping their bytes just bloats
+    // the URL (doomengine.b is ~70KB). Same for files whose content
+    // is byte-identical to a shipped tutorial example — the recipient
+    // can re-fetch from examples/ via the slug, no need to ship bytes.
+    async function packBundle(files) {
+      const slim = [];
+      for (const f of files) {
+        if (f.name.endsWith(".b")) {
+          const base = f.name.slice(0, -2);
+          if (SHIPPED_LIBS.has(base)) continue;          // shipped lib
+          const pristineSlug = await fileMatchesShippedExample(f);
+          if (pristineSlug) {
+            // Ship only the (name, slug, entry) tuple — recipient
+            // refetches content from examples/<slug>.b.
+            slim.push({ name: f.name, entry: !!f.entry, slug: pristineSlug });
+            continue;
+          }
+        }
+        slim.push({ name: f.name, entry: !!f.entry, content: f.content ?? "" });
+      }
+      const json = JSON.stringify(slim);
+      const jsonBytes = new TextEncoder().encode(json);
+      // Try compression; fall back to plain if unavailable or bigger.
+      if (typeof CompressionStream === "function") {
+        try {
+          const cs = new Blob([jsonBytes]).stream()
+            .pipeThrough(new CompressionStream("deflate-raw"));
+          const compressed = new Uint8Array(await new Response(cs).arrayBuffer());
+          if (compressed.length + 1 < jsonBytes.length + 1) {
+            const out = new Uint8Array(compressed.length + 1);
+            out[0] = 0x5A; // 'Z'
+            out.set(compressed, 1);
+            return out;
+          }
+        } catch (e) { /* fall through */ }
+      }
+      const out = new Uint8Array(jsonBytes.length + 1);
+      out[0] = 0x4A; // 'J'
+      out.set(jsonBytes, 1);
+      return out;
+    }
+    async function unpackBundle(bytes) {
+      if (!bytes || bytes.length < 1) return null;
+      const tag = bytes[0];
+      const body = bytes.subarray(1);
+      let jsonText;
+      if (tag === 0x4A) {
+        jsonText = new TextDecoder().decode(body);
+      } else if (tag === 0x5A) {
+        if (typeof DecompressionStream !== "function") return null;
+        try {
+          const ds = new Blob([body]).stream()
+            .pipeThrough(new DecompressionStream("deflate-raw"));
+          jsonText = await new Response(ds).text();
+        } catch { return null; }
+      } else {
+        return null;
+      }
+      try {
+        const arr = JSON.parse(jsonText);
+        if (!Array.isArray(arr)) return null;
+        const filtered = arr.filter(o => o && typeof o.name === "string");
+        // Resolve any `slug` entries (pristine shipped examples that
+        // were omitted from the bundle) by fetching from examples/.
+        // Run in parallel so a multi-slug bundle isn't serialized.
+        const resolved = await Promise.all(filtered.map(async (o) => {
+          if (typeof o.slug === "string" && BY_SLUG.has(o.slug)) {
+            const content = await fetchText(`examples/${o.slug}.b?v=${V}`, "");
+            return { name: sanitizeName(o.name), entry: !!o.entry, content };
+          }
+          return {
+            name: sanitizeName(o.name),
+            entry: !!o.entry,
+            content: typeof o.content === "string" ? o.content : "",
+          };
+        }));
+        return resolved;
+      } catch { return null; }
+    }
+    function sanitizeName(raw, fallback = "shared.b") {
+      const cleaned = (raw || "").replace(/[^\w.\-]/g, "_");
+      if (!cleaned) return fallback;
+      if (!/\.(b|h)$/.test(cleaned)) return cleaned + ".b";
+      return cleaned;
+    }
+    function upsertFileFromUrl(name, content) {
+      name = sanitizeName(name);
+      const ex = files.findIndex(f => f.name === name);
+      const entry = name.endsWith(".b");
+      if (ex >= 0) {
+        files[ex].content = content;
+      } else {
+        if (entry) files.forEach(f => f.entry = false);
+        files.push({ name, entry, content });
+      }
+      persistFiles();
+      rebuildSourceTabs(false);
+      const idx = files.findIndex(f => f.name === name);
+      if (idx >= 0) openFileTab(idx);
+    }
+    async function applyUrlParams() {
+      const p = readUrlParams();
+      if (p.bundle) {
+        const bytes = b64UrlToBytes(p.bundle);
+        const restored = bytes ? await unpackBundle(bytes) : null;
+        if (restored && restored.length > 0) {
+          // Make sure exactly one .b file is marked entry. Prefer the
+          // bundle's own entry flag, else first .b file.
+          let hasEntry = restored.some(f => f.entry && f.name.endsWith(".b"));
+          if (!hasEntry) {
+            const i = restored.findIndex(f => f.name.endsWith(".b"));
+            if (i >= 0) restored[i].entry = true;
+          }
+          files.length = 0;
+          for (const f of restored) files.push(f);
+          persistFiles();
+          rebuildSourceTabs(false);
+          const entryIdx = files.findIndex(f => f.entry);
+          if (entryIdx >= 0) openFileTab(entryIdx);
+          return;
+        } else {
+          console.error("bundle param could not be decoded");
+        }
+      }
+      if (p.src) {
+        const content = decodeB64Url(p.src);
+        if (content !== null) upsertFileFromUrl(p.name, content);
+        return;
+      }
+      let fetchUrl = p.url;
+      if (!fetchUrl && p.gh) {
+        const parts = p.gh.split("/").filter(Boolean);
+        if (parts.length >= 4) {
+          const [user, repo, branch, ...rest] = parts;
+          fetchUrl = `https://raw.githubusercontent.com/${user}/${repo}/${branch}/${rest.join("/")}`;
+        }
+      }
+      if (fetchUrl) {
+        try {
+          const r = await fetch(fetchUrl);
+          if (!r.ok) { console.error("URL load HTTP", r.status); return; }
+          const content = await r.text();
+          const base = p.name || fetchUrl.split("/").pop() || "remote.b";
+          upsertFileFromUrl(base, content);
+          return;
+        } catch (e) {
+          console.error("URL load failed:", e);
+          return;
+        }
+      }
+      if (p.example) await openExamplePreview(p.example);
+    }
+    // Check whether a workspace file's content matches the shipped
+    // example bytes exactly. If so, the share link can use the compact
+    // #example=<slug> form instead of b64-packing the source.
+    async function fileMatchesShippedExample(file) {
+      if (!file.name.endsWith(".b")) return null;
+      const slug = file.name.slice(0, -2);
+      if (!BY_SLUG.has(slug)) return null;
+      try {
+        const shipped = await fetchText(`examples/${slug}.b?v=${V}`, null);
+        if (shipped !== null && shipped === file.content) return slug;
+      } catch { /* fall through */ }
+      return null;
+    }
+    async function buildShareUrl() {
+      // Preview tab: share the example slug.
+      const t = sourceTabs[activeTab];
+      if (t?.kind === "preview" && BY_SLUG.has(t.name)) {
+        return `${location.origin}${location.pathname}#example=${encodeURIComponent(t.name)}`;
+      }
+      // Active editable file that's a pristine copy of a shipped
+      // example: same compact #example= URL, no b64 payload needed.
+      if (t?.kind === "file") {
+        const f = files[t.fileIdx];
+        if (f) {
+          const slug = await fileMatchesShippedExample(f);
+          if (slug) {
+            return `${location.origin}${location.pathname}#example=${encodeURIComponent(slug)}`;
+          }
+        }
+      }
+      // Single editable file: use the compact src= form.
+      if (files.length === 1) {
+        const f = files[0];
+        const enc = encodeB64Url(f.content);
+        return `${location.origin}${location.pathname}#name=${encodeURIComponent(f.name)}&src=${enc}`;
+      }
+      // Multi-file workspace: pack the whole thing into bundle=.
+      // Recipients without the same local files still get a working
+      // copy because all sources travel in the URL.
+      const bytes = await packBundle(files);
+      const enc = bytesToB64Url(bytes);
+      return `${location.origin}${location.pathname}#bundle=${enc}`;
+    }
+    document.getElementById("shareLink").addEventListener("click", async () => {
+      let url;
+      try { url = await buildShareUrl(); }
+      catch (e) { console.error(e); alert("Could not build share URL."); return; }
+      if (!url) { alert("Nothing to share."); return; }
+      const URL_WARN = 30000;   // Most browsers handle >32KB hashes fine,
+                                 // but warn before producing something pathological.
+      if (url.length > URL_WARN) {
+        if (!confirm(`Share URL is ${url.length} chars long — some chat apps may truncate it. Copy anyway?`)) return;
+      }
+      try {
+        await navigator.clipboard.writeText(url);
+        const btn = document.getElementById("shareLink");
+        const old = btn.textContent;
+        btn.textContent = `Copied (${url.length}c)`;
+        setTimeout(() => { btn.textContent = old; }, 1500);
+      } catch {
+        prompt("Copy this link:", url);
+      }
+    });
+
+    // Initial render. loadAssetsForActive hydrates the asset registry
+    // from the active workspace before the asset pane paints.
+    await loadAssetsForActive();
+    rebuildSourceTabs(false);
+    renderFileList();
+    renderAssetList();
+    renderExampleList();
+    renderApiList();
+    syncEditor();
+    applyUrlParams();
+    refreshLangUI();           // reflect entry-file language (dialect/debug UI)
+  </script>
+</body>
+</html>
