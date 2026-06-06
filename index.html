@@ -1131,6 +1131,18 @@
       border-radius: 2px;
     }
     .mem-controls .mem-info { color: var(--fg-dim); margin-left: auto; }
+    .locals-box {
+      margin: 0;
+      padding: 0.4rem 0.6rem;
+      border-bottom: 1px solid var(--border);
+      font-family: "Intel One Mono", ui-monospace, monospace;
+      font-size: 0.78rem;
+      white-space: pre;
+      background: var(--bg-3);
+      color: var(--tok-kw);
+      max-height: 9rem;
+      overflow: auto;
+    }
     #memDump {
       margin: 0;
       flex: 1;
@@ -1377,6 +1389,7 @@
                    title="case-insensitive: matches G!N or libhdr name (substring)">
             <span id="memInfo" class="mem-info"></span>
           </div>
+          <pre id="localsBox" class="locals-box" style="display:none"></pre>
           <pre id="memDump"></pre>
         </div>
       </div>
@@ -2693,6 +2706,7 @@ LET start() = VALOF
     const ASYNC_IMPORTS = [
       "env.bcpl_cowait", "env.bcpl_callco", "env.bcpl_resumeco",
       "env.bcpl_changeco", "env.bcpl_delay",
+      "env.__break",   // C/B per-statement breakpoint hook
     ];
 
     // Run asyncify on a wasm buffer and return the transformed bytes.
@@ -2718,6 +2732,7 @@ LET start() = VALOF
         "env.bcpl_cowait", "env.bcpl_callco", "env.bcpl_resumeco",
         "env.bcpl_changeco", "env.bcpl_delay",
         "env.bcpl_break",
+        "env.__break",   // C/B per-statement breakpoint hook
       ].join(",");
       if (typeof binaryen.setPassArgument === "function") {
         binaryen.setPassArgument("asyncify-imports", suspending);
@@ -3042,62 +3057,103 @@ LET start() = VALOF
     // the files pane and compile via the client-side C compiler; BCPL paths are
     // untouched. The C dialect (last1120 / prestruct) is a compiler option.
     async function doCompileC(entry) {
-      const { wat, diagnostics } = await compileC(entry.content, cDialect());
+      const dbg = !!dbgModeEl.checked;
+      const { wat, diagnostics, dbgMap } = await compileC(entry.content, cDialect(), dbg);
       liveWatEl.textContent = wat || "(no WAT)";
       if (diagnostics) outputEl.textContent += diagnostics + "\n";
       if (!wat || !wat.includes("(func")) {
         setStatus("compile error", true);
         return null;
       }
-      const bytes = await assembleWat(wat, "c.wat", false);
+      const bytes = await assembleWat(wat, "c.wat", dbg);
       setStatus(diagnostics ? "compiled (warnings)" : "compiled");
-      return { libBufs: [], entryBufs: [bytes], modulesPerSource: [1] };
+      return { libBufs: [], entryBufs: [bytes], modulesPerSource: [1], dbgMap };
     }
 
     async function doRunC(built) {
       // Waterloo B gets its string-library runtime; C and B(1972) share CRuntime.
       const mk = entryIsBW() ? makeBWRuntime : makeCRuntime;
       const rt = mk((s) => { outputEl.textContent += s; }, stdinEl.value);
+      rt.dbgMap = built.dbgMap || null;
       currentRt = rt; lastMemRt = rt;
+      const entryName = (entryFile() || {}).name;
+      rt.onPause = (line) => {
+        setStatus(`paused at line ${line}`);
+        statusEl.classList.add("paused");
+        continueBtn.style.display = ""; continueBtn.disabled = false;
+        stepBtn.style.display = ""; stepBtn.disabled = false;
+        if (entryName) {
+          const idx = files.findIndex(f => f.name === entryName);
+          if (idx >= 0) openFileTab(idx);
+        }
+        setPausedLine(line, entryName);
+        jumpToLine(line);
+        renderNativeLocals(rt, line);
+        activateOutputTab("mem");
+      };
+      rt.onResume = () => {
+        statusEl.classList.remove("paused");
+        continueBtn.disabled = true; stepBtn.disabled = true;
+        clearPausedLine();
+      };
+      continueBtn.style.display = dbgModeEl.checked ? "" : "none";
+      stepBtn.style.display     = dbgModeEl.checked ? "" : "none";
+      continueBtn.disabled = true; stepBtn.disabled = true;
       stopBtn.disabled = false;
       try {
         await rt.loadProgramFromBytes(built.entryBufs[0]);
+        rt.setBreakpoints(allBpLines());
         setStatus("running…");
         await rt.run();
-        setStatus("ok");
+        if (!statusEl.classList.contains("paused")) setStatus("ok");
       } catch (err) {
         setStatus("runtime error", true);
         outputEl.textContent += `\n[runtime error] ${err.message ?? err}`;
         console.error(err);
       } finally {
         stopBtn.disabled = true;
+        clearPausedLine();
       }
+    }
+
+    // Locals view for a paused native (C/B) program: show frame variables by
+    // name (from the compiler's -g map) read at the paused frame base.
+    function renderNativeLocals(rt, line) {
+      const box = document.getElementById("localsBox");
+      if (!box) return;
+      const locals = (typeof rt.localsAt === "function") ? rt.localsAt(line) : [];
+      if (!locals.length) { box.style.display = "none"; box.textContent = ""; return; }
+      box.style.display = "";
+      box.textContent = "locals @ line " + line + ":\n" +
+        locals.map(v => `  ${v.name} = ${v.value}`).join("\n");
     }
 
     async function doCompileB(entry) {
-      const { wat, diagnostics } = await compileB(entry.content);
+      const dbg = !!dbgModeEl.checked;
+      const { wat, diagnostics, dbgMap } = await compileB(entry.content, dbg);
       liveWatEl.textContent = wat || "(no WAT)";
       if (diagnostics) outputEl.textContent += diagnostics + "\n";
       if (!wat || !wat.includes("(func")) {
         setStatus("compile error", true);
         return null;
       }
-      const bytes = await assembleWat(wat, "b.wat", false);
+      const bytes = await assembleWat(wat, "b.wat", dbg);
       setStatus(diagnostics ? "compiled (warnings)" : "compiled");
-      return { libBufs: [], entryBufs: [bytes], modulesPerSource: [1] };
+      return { libBufs: [], entryBufs: [bytes], modulesPerSource: [1], dbgMap };
     }
 
     async function doCompileBW(entry) {
-      const { wat, diagnostics } = await compileBW(entry.content, files);
+      const dbg = !!dbgModeEl.checked;
+      const { wat, diagnostics, dbgMap } = await compileBW(entry.content, files, dbg);
       liveWatEl.textContent = wat || "(no WAT)";
       if (diagnostics) outputEl.textContent += diagnostics + "\n";
       if (!wat || !wat.includes("(func")) {
         setStatus("compile error", true);
         return null;
       }
-      const bytes = await assembleWat(wat, "bw.wat", false);
+      const bytes = await assembleWat(wat, "bw.wat", dbg);
       setStatus(diagnostics ? "compiled (warnings)" : "compiled");
-      return { libBufs: [], entryBufs: [bytes], modulesPerSource: [1] };
+      return { libBufs: [], entryBufs: [bytes], modulesPerSource: [1], dbgMap };
     }
 
     // Reflect the active language in the header indicator and gate UI: the C
@@ -3105,10 +3161,8 @@ LET start() = VALOF
     // greenfield language (C, B). Called whenever the entry changes.
     function refreshLangUI() {
       const lang = activeLang;
-      const native = lang !== "bcpl";
       document.getElementById("cDialect").style.display = lang === "c" ? "" : "none";
-      document.getElementById("dbgMode").style.display  = native ? "none" : "";
-      if (native) { continueBtn.style.display = "none"; stepBtn.style.display = "none"; }
+      document.getElementById("dbgMode").style.display  = "";	// debugging works for all langs now
       const lmLang = document.getElementById("lmLang");
       const lmAttrib = document.getElementById("lmAttrib");
       const langMode = document.getElementById("langMode");
@@ -3786,7 +3840,7 @@ LET start() = VALOF
     //     otherwise fire as "phantom" hits because $__line carries
     //     no file id — every file with the same line number matches.
     function allBpLines() {
-      if (!dbgModeEl.checked || entryIsNative()) return [];
+      if (!dbgModeEl.checked) return [];   // works for BCPL and the native langs
       const liveNames = new Set(files.map(f => f.name));
       const out = [];
       for (const [name, s] of bpByFile) {
@@ -4146,7 +4200,7 @@ LET start() = VALOF
       // Gutter — per-line spans for error dot + breakpoint dot.
       // Breakpoints render only when Debugger toggle is on so the
       // gutter doesn't get noisy in non-debug sessions.
-      const bps = (dbgModeEl?.checked && name && langOf(name) === "bcpl")
+      const bps = (dbgModeEl?.checked && name && isCompilable(name))
         ? (bpByFile.get(name) ?? new Set())
         : new Set();
       const parts = [];
@@ -4237,7 +4291,7 @@ LET start() = VALOF
       if (!sp) return;
       const line = parseInt(sp.getAttribute("data-line"), 10);
       const file = activeFileName();
-      if (dbgModeEl?.checked && file && langOf(file) === "bcpl") {
+      if (dbgModeEl?.checked && file && isCompilable(file)) {
         toggleBp(file, line);
         return;
       }
