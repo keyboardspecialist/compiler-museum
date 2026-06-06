@@ -9,6 +9,8 @@ modifies neither.
   compiled to wasm, plus the IDE runtime, examples, and shell.
 - **1972 C compilers** (`../proto-c`) — Dennis Ritchie's `last1120` and
   `prestruct` compilers, modernized to C89 with a WebAssembly backend.
+- **1972 B** (`../proto-c/b72`) — Ken Thompson's B, the typeless ancestor of C,
+  on the same WAT backend (`.bth` files; `.b` is BCPL).
 - (future languages drop in the same way.)
 
 ## Build & run
@@ -28,9 +30,10 @@ into `site/` (gitignored, deployable). Override locations with `BCPL=` /
 
 Tracked (museum-owned):
 ```
-src/index.html      forked BCPL IDE shell + the C integration
+src/index.html      forked BCPL IDE shell + the C and B integration
 src/lang-c.mjs      C language module: compile (cfront-wasm -> WAT), CRuntime, examples
-compilers/build-c.sh emcc proto-c -> site/compilers/cfront-{prestruct,1120}.{wasm,mjs}
+src/lang-b.mjs      B language module: compile (cfront-b -> WAT), examples (reuses CRuntime)
+compilers/build-c.sh emcc proto-c -> site/compilers/cfront-{prestruct,1120,b}.{wasm,mjs}
 vendor/wabt.js      self-contained UMD WAT->wasm assembler (window.WabtModule)
 vendor/binaryen.mjs self-contained ESM (v129) for the asyncify pass
 build.sh            assembles site/ from the upstreams
@@ -54,10 +57,11 @@ Enable once in repo Settings -> Pages -> Branch `gh-pages` / root.
 ## How a language is chosen
 
 By the **entry file's extension**: `.c` -> the C compiler (dialect picked by the
-`C dialect` control), anything else -> BCPL. `.b` and `.c` files coexist in the
-files pane; the BCPL debugger gates off when the entry is `.c` (C is greenfield —
-its own debugging can come later). Adding a compiler is a `lang-<x>.mjs` plus a
-small shell hook.
+`C dialect` control), `.bth` -> the B compiler, anything else -> BCPL (`.b` is
+BCPL, so B takes `.bth`). `.b`, `.c`, and `.bth` files coexist in the files pane;
+the centered header indicator names the active language, and the BCPL debugger
+gates off for the greenfield languages (C, B) — their own debugging can come
+later. Adding a compiler is a `lang-<x>.mjs` plus a small shell hook.
 
 ## Reconciling the shell with upstream BCPL
 

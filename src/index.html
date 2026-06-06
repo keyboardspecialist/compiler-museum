@@ -1375,6 +1375,7 @@
   <script type="module">
     // Museum: C language support (the two 1972 C compilers, built to wasm).
     import { compileC, makeCRuntime, C_EXAMPLES } from "./lang-c.mjs";
+    import { compileB, B_EXAMPLES } from "./lang-b.mjs";
     const V = Date.now();
     // Build tag in header — derived from the page's last-modified
     // header (server-side mtime). If the browser served a cached
@@ -1467,13 +1468,21 @@
     // Museum: language follows the file extension. The entry file's extension
     // picks the compiler (.c -> C, else BCPL); the C dialect is a separate
     // compiler option chosen via #cDialect.
-    const langOf = (name) => (name && name.endsWith(".c") ? "c" : "bcpl");
-    const isCompilable = (name) => name.endsWith(".b") || name.endsWith(".c");
+    const langOf = (name) =>
+      !name ? "bcpl"
+        : name.endsWith(".c")   ? "c"
+        : name.endsWith(".bth") ? "b"      // B (1972); .b is BCPL, so B uses .bth
+        : "bcpl";
+    const isCompilable = (name) =>
+      name.endsWith(".b") || name.endsWith(".c") || name.endsWith(".bth");
     function entryFile() {
       const src = files.filter((f) => isCompilable(f.name));
       return src.find((f) => f.entry) || src[0] || null;
     }
     const entryIsC = () => { const e = entryFile(); return !!e && langOf(e.name) === "c"; };
+    const entryIsB = () => { const e = entryFile(); return !!e && langOf(e.name) === "b"; };
+    // C and B are the greenfield, non-BCPL languages (own runtime, no debugger).
+    const entryIsNative = () => { const e = entryFile(); return !!e && langOf(e.name) !== "bcpl"; };
     const cDialect = () => document.getElementById("cDialect").value || "1120";
     const compileBtn    = document.getElementById("compileRun");
     const compileOnlyBtn= document.getElementById("compileOnly");
@@ -2368,6 +2377,27 @@ LET start() = VALOF
           li.appendChild(add);
           exampleListEl.appendChild(li);
         }
+
+        const bhdr = document.createElement("div");
+        bhdr.style.color = "var(--fg-dim)";
+        bhdr.style.marginTop = "0.6rem";
+        bhdr.style.fontSize = "0.72rem";
+        bhdr.style.textTransform = "uppercase";
+        bhdr.style.letterSpacing = "0.05em";
+        bhdr.textContent = "B · 1972";
+        exampleListEl.appendChild(bhdr);
+        for (const e of B_EXAMPLES) {
+          const li = document.createElement("li");
+          const nm = document.createElement("span");
+          nm.className = "name"; nm.style.flex = "1";
+          nm.textContent = e.name;
+          li.appendChild(nm);
+          const add = document.createElement("button");
+          add.textContent = "+"; add.title = "add as a .bth file"; add.className = "example-add";
+          add.onclick = (ev) => { ev.stopPropagation(); addBExampleAsFile(e.name); };
+          li.appendChild(add);
+          exampleListEl.appendChild(li);
+        }
       }
     }
 
@@ -2923,25 +2953,47 @@ LET start() = VALOF
       }
     }
 
-    // Show the C dialect control + hide the (BCPL-specific) debugger when the
-    // entry file is .c. Called whenever the entry changes.
+    async function doCompileB(entry) {
+      const { wat, diagnostics } = await compileB(entry.content);
+      liveWatEl.textContent = wat || "(no WAT)";
+      if (diagnostics) outputEl.textContent += diagnostics + "\n";
+      if (!wat || !wat.includes("(func")) {
+        setStatus("compile error", true);
+        return null;
+      }
+      const bytes = await assembleWat(wat, "b.wat", false);
+      setStatus(diagnostics ? "compiled (warnings)" : "compiled");
+      return { libBufs: [], entryBufs: [bytes], modulesPerSource: [1] };
+    }
+
+    // Reflect the active language in the header indicator and gate UI: the C
+    // dialect select shows only for C; the (BCPL-specific) debugger hides for any
+    // greenfield language (C, B). Called whenever the entry changes.
     function refreshLangUI() {
-      const c = entryIsC();
-      document.getElementById("cDialect").style.display = c ? "" : "none";
-      document.getElementById("dbgMode").style.display  = c ? "none" : "";
-      if (c) { continueBtn.style.display = "none"; stepBtn.style.display = "none"; }
-      // Center mode indicator: language name + attribution (dialect select
-      // lives between them and only shows for C).
-      document.getElementById("lmLang").textContent  = c ? "C" : "BCPL";
-      document.getElementById("lmAttrib").innerHTML = c
-        ? '<a href="https://www.bell-labs.com/usr/dmr/www/" target="_blank" rel="noopener noreferrer">Ritchie</a> · Bell Labs · 1972'
-        : '<a href="https://www.cl.cam.ac.uk/~mr10/" target="_blank" rel="noopener noreferrer">Richards</a> · Cambridge · 1967';
-      // Origin of the specific compiler now active (C distinguishes dialects).
-      document.getElementById("langMode").title = !c
-        ? "BCPL — Martin Richards' Cintcode BCPL (Cambridge, from 1967), compiled here to WebAssembly."
-        : cDialect() === "prestruct"
+      const e = entryFile();
+      const lang = e ? langOf(e.name) : "bcpl";
+      const native = lang !== "bcpl";
+      document.getElementById("cDialect").style.display = lang === "c" ? "" : "none";
+      document.getElementById("dbgMode").style.display  = native ? "none" : "";
+      if (native) { continueBtn.style.display = "none"; stepBtn.style.display = "none"; }
+      const lmLang = document.getElementById("lmLang");
+      const lmAttrib = document.getElementById("lmAttrib");
+      const langMode = document.getElementById("langMode");
+      if (lang === "c") {
+        lmLang.textContent = "C";
+        lmAttrib.innerHTML = '<a href="https://www.bell-labs.com/usr/dmr/www/" target="_blank" rel="noopener noreferrer">Ritchie</a> · Bell Labs · 1972';
+        langMode.title = cDialect() === "prestruct"
           ? "prestruct-c — Ritchie's 1972–73 C, just before the struct rework: C-style array decay, early structs (Bell Labs)."
           : "last1120c — Ritchie's earliest surviving C compiler (Bell Labs, 1972), pre-K&R: B-style reassignable array pointers, no structs.";
+      } else if (lang === "b") {
+        lmLang.textContent = "B";
+        lmAttrib.innerHTML = '<a href="https://www.nokia.com/bell-labs/about/dennis-m-ritchie/kbman.html" target="_blank" rel="noopener noreferrer">Thompson</a> · Bell Labs · 1972';
+        langMode.title = "B — Ken Thompson's 1972 typeless ancestor of C (Bell Labs): a word machine with reassignable pointers and fall-through switch. Compiled here to WebAssembly.";
+      } else {
+        lmLang.textContent = "BCPL";
+        lmAttrib.innerHTML = '<a href="https://www.cl.cam.ac.uk/~mr10/" target="_blank" rel="noopener noreferrer">Richards</a> · Cambridge · 1967';
+        langMode.title = "BCPL — Martin Richards' Cintcode BCPL (Cambridge, from 1967), compiled here to WebAssembly.";
+      }
     }
     document.getElementById("cDialect").addEventListener("change", () => {
       if (typeof invalidateLastBuilt === "function") invalidateLastBuilt();
@@ -2961,6 +3013,26 @@ LET start() = VALOF
         files[idx].content = e.source;
       }
       if (e.dialect) document.getElementById("cDialect").value = e.dialect;
+      if (e.stdin) stdinEl.value = e.stdin;
+      persistFiles();
+      rebuildSourceTabs(false);
+      openFileTab(idx);
+      renderFileList();
+      refreshLangUI();
+    }
+
+    // Add a B example program as a real .bth file in the workspace.
+    function addBExampleAsFile(exName) {
+      const e = B_EXAMPLES.find((x) => x.name === exName);
+      if (!e) return;
+      const fname = exName.split(/[ (]/)[0] + ".bth";
+      let idx = files.findIndex((f) => f.name === fname);
+      if (idx < 0) {
+        files.push({ name: fname, entry: !files.some((f) => f.entry), content: e.source });
+        idx = files.length - 1;
+      } else {
+        files[idx].content = e.source;
+      }
       if (e.stdin) stdinEl.value = e.stdin;
       persistFiles();
       rebuildSourceTabs(false);
@@ -2988,6 +3060,7 @@ LET start() = VALOF
       {
         const _entry = entryFile();         // language by entry-file extension
         if (_entry && langOf(_entry.name) === "c") return await doCompileC(_entry);
+        if (_entry && langOf(_entry.name) === "b") return await doCompileB(_entry);
       }
       const compileErrAcc = new Map();
       let built = null;
@@ -3068,7 +3141,7 @@ LET start() = VALOF
     // Run an already-assembled build through a fresh BcplRuntime.
     async function doRun(built) {
       if (!built) return;
-      if (entryIsC()) return await doRunC(built);   // .c entry: own runtime
+      if (entryIsNative()) return await doRunC(built);   // C/B entry: own runtime
       setStatus("loading…");
       const rt = new BcplRuntime(
         (s) => { outputEl.textContent += s; },
@@ -3467,7 +3540,7 @@ LET start() = VALOF
     //     otherwise fire as "phantom" hits because $__line carries
     //     no file id — every file with the same line number matches.
     function allBpLines() {
-      if (!dbgModeEl.checked || entryIsC()) return [];
+      if (!dbgModeEl.checked || entryIsNative()) return [];
       const liveNames = new Set(files.map(f => f.name));
       const out = [];
       for (const [name, s] of bpByFile) {

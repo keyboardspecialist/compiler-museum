@@ -1,6 +1,6 @@
-// Headless E2E for the extension-driven museum: BCPL regression + C files in
-// the pane (add as .c, star entry, compile/run, dialect flip). Needs a static
-// server on :8733 and network (wabt via esm.sh).
+// Headless E2E for the extension-driven museum: BCPL regression + C files (.c,
+// dialect flip) + B files (.bth, fall-through switch). Add as a file, star the
+// entry, compile/run. Needs a static server on :8733 (wabt is vendored).
 import { chromium } from "playwright";
 
 const URL = "http://localhost:8733/";
@@ -69,6 +69,26 @@ try {
 	await waitOut("Lvalue required");
 	ok(true, "bsem.c [prestruct] -> Lvalue required");
 } catch (e) { ok(false, "bsem.c: " + e.message + " | out=" + JSON.stringify(await outText())); }
+
+// 3b. B (.bth): add hello, star, run -> "Hi!"; indicator shows B; switch falls
+//     through (no break) -> "3 2 1". addCExample('name').last() picks the B row
+//     (the B section is appended after the C one).
+try {
+	await addCExample("hello");
+	await starFile("hello.bth");
+	const lang = await page.evaluate(() => document.getElementById("lmLang").textContent);
+	const dbgHidden = !(await page.locator("#dbgMode").isVisible());
+	const dialectHidden = !(await page.locator("#cDialect").isVisible());
+	ok(lang === "B" && dbgHidden && dialectHidden, ".bth entry: B indicator, debug + dialect hidden");
+	await clearAndRun();
+	await waitOut("Hi!");
+	ok(true, "B hello.bth -> Hi!");
+	await addCExample("switch");
+	await starFile("switch.bth");
+	await clearAndRun();
+	await waitOut("3 2 1");
+	ok(true, "B switch fallthrough (no break) -> 3 2 1");
+} catch (e) { ok(false, "B: " + e.message + " | out=" + JSON.stringify(await outText())); }
 
 // 4. Switch entry back to BCPL; debug returns; main.b intact
 try {
