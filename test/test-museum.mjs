@@ -75,6 +75,14 @@ try {
 	await clearAndRun();
 	await waitOut("Lvalue required");
 	ok(true, "bsem.c [prestruct] -> Lvalue required");
+	// dialect-specific examples refilter when #cDialect changes
+	await page.click('#leftTabs button[data-tab="examples"]');
+	const exPre = await page.evaluate(() => document.getElementById("exampleList").textContent);
+	await page.selectOption("#cDialect", "1120");
+	await page.waitForTimeout(150);
+	const ex1120 = await page.evaluate(() => document.getElementById("exampleList").textContent);
+	ok(/struct/.test(exPre) && !/struct/.test(ex1120) && /bsem/.test(ex1120),
+		"C examples refilter by dialect (struct=prestruct, bsem=1120)");
 } catch (e) { ok(false, "bsem.c: " + e.message + " | out=" + JSON.stringify(await outText())); }
 
 // 3b. B 1972 (.b72)
