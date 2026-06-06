@@ -59,12 +59,25 @@ Enable once in repo Settings -> Pages -> Branch `gh-pages` / root.
 
 ## How a language is chosen
 
-By the **entry file's extension**: `.c` -> the C compiler (dialect picked by the
-`C dialect` control), `.b72` -> B (1972), `.b78` -> Waterloo B (1978), anything
-else -> BCPL (`.b` is BCPL). `.b`, `.c`, `.b72`, and `.b78` files coexist in the pane;
-the centered header indicator names the active language, and the BCPL debugger
-gates off for the greenfield languages (C, B) — their own debugging can come
-later. Adding a compiler is a `lang-<x>.mjs` plus a small shell hook.
+A workspace is the global context; within it the **`lang:` selector** (top bar,
+next to `workspace:`) picks the active language — `bcpl` / `c` / `b` (1972) /
+`bw` (Waterloo 1978) — persisted per workspace (`bcpl-ws:<name>:lang`). The
+active language re-scopes the left tabs: the **Files** pane groups files by
+language (`.b` BCPL, `.c` C, `.b72` B, `.b78` Waterloo; active group expanded,
+others a clickable header that switches language); **Examples** and **API** show
+only that language; the header indicator + the `C dialect` control + the BCPL
+debugger gate on it; and the editor highlights per dialect. Starring a file also
+makes its language active. The compile entry is per-language (the starred-or-first
+file of the active language). Assets stay workspace-wide. Adding a compiler is a
+`lang-<x>.mjs` (compile + runtime + `*_EXAMPLES` + `*_API`) plus a small shell hook.
+
+## Syntax highlighting
+
+The editor is a transparent textarea over a highlight `<pre>`. `highlightBCPL`
+handles BCPL; `highlightClike(src, kwSet, escChar)` handles the C-like dialects
+(C / B / Waterloo) — comments, strings (escape char `\` for C, `*` for B),
+numbers, keywords, and operators (incl. Waterloo `#`-float ops). `syncEditor`
+dispatches on the active file's extension.
 
 ## Reconciling the shell with upstream BCPL
 

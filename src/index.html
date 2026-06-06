@@ -542,6 +542,17 @@
     }
     .file-list li .name { flex: 1; }
     .file-list li .name.entry { color: var(--entry); font-weight: 700; }
+    .file-list li.lang-group {
+      color: var(--fg-dim);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-top: 0.4rem;
+      padding: 0.15rem 0.2rem;
+    }
+    .file-list li.lang-group.open { color: var(--accent); }
+    .file-list li.lang-group:not(.open) { cursor: pointer; }
+    .file-list li.lang-group:not(.open):hover { color: var(--fg); }
     .example-add {
       background: transparent;
       border: 1px solid var(--bg-3);
@@ -1208,6 +1219,13 @@
       <span id="lmAttrib" class="lm-attrib">Richards · 1967</span>
     </div>
     <span class="ws-bar" id="wsBar" style="margin-left:auto;display:flex;align-items:center;gap:0.35rem;">
+      <label class="sub" style="font-size:0.75rem;color:var(--fg-dim);">lang:</label>
+      <select id="langSelect" title="active language — scopes the Files, Examples and API tabs">
+        <option value="bcpl">BCPL</option>
+        <option value="c">C</option>
+        <option value="b">B · 1972</option>
+        <option value="bw">B · Waterloo</option>
+      </select>
       <label class="sub" style="font-size:0.75rem;color:var(--fg-dim);">workspace:</label>
       <select id="wsSelect" title="active workspace"></select>
       <button id="wsNew"    title="new workspace">+</button>
@@ -1374,9 +1392,9 @@
   <script src="./vendor/wabt.js"></script>
   <script type="module">
     // Museum: C language support (the two 1972 C compilers, built to wasm).
-    import { compileC, makeCRuntime, C_EXAMPLES } from "./lang-c.mjs";
-    import { compileB, B_EXAMPLES } from "./lang-b.mjs";
-    import { compileBW, makeBWRuntime, BW_EXAMPLES } from "./lang-bw.mjs";
+    import { compileC, makeCRuntime, C_EXAMPLES, C_API } from "./lang-c.mjs";
+    import { compileB, B_EXAMPLES, B_API } from "./lang-b.mjs";
+    import { compileBW, makeBWRuntime, BW_EXAMPLES, BW_API } from "./lang-bw.mjs";
     const V = Date.now();
     // Build tag in header — derived from the page's last-modified
     // header (server-side mtime). If the browser served a cached
@@ -1478,8 +1496,10 @@
     const isCompilable = (name) =>
       name.endsWith(".b") || name.endsWith(".c") ||
       name.endsWith(".b72") || name.endsWith(".b78");
+    // The compile entry for the ACTIVE language: starred-or-first compilable
+    // file of that language. Each language keeps its own entry within a workspace.
     function entryFile() {
-      const src = files.filter((f) => isCompilable(f.name));
+      const src = files.filter((f) => isCompilable(f.name) && langOf(f.name) === activeLang);
       return src.find((f) => f.entry) || src[0] || null;
     }
     const entryIsC = () => { const e = entryFile(); return !!e && langOf(e.name) === "c"; };
@@ -1794,6 +1814,7 @@ LET start() = VALOF
     const WS_ACTIVE_KEY = "bcpl-ws:active";
     const WS_FILES_KEY  = (n) => `bcpl-ws:${n}:files`;
     const WS_ASSETS_KEY = (n) => `bcpl-ws:${n}:assets`;
+    const WS_LANG_KEY   = (n) => `bcpl-ws:${n}:lang`;   // explicit active language
 
     function wsList() {
       try {
@@ -1813,6 +1834,20 @@ LET start() = VALOF
     }
     function wsSetActive(name) {
       try { localStorage.setItem(WS_ACTIVE_KEY, name); } catch {}
+    }
+    // Active language for the current workspace. Stored explicitly; if absent
+    // (legacy workspaces), derived from the entry file's extension.
+    function deriveLang() {
+      const src = files.filter((f) => isCompilable(f.name));
+      const e = src.find((f) => f.entry) || src[0];
+      return e ? langOf(e.name) : "bcpl";
+    }
+    function wsLang() {
+      const v = localStorage.getItem(WS_LANG_KEY(wsActive()));
+      return (v === "bcpl" || v === "c" || v === "b" || v === "bw") ? v : deriveLang();
+    }
+    function wsSetLang(l) {
+      try { localStorage.setItem(WS_LANG_KEY(wsActive()), l); } catch {}
     }
     function wsMigrateLegacy() {
       // First-run migration: if the old FILES_LS_KEY has data and no
@@ -1837,6 +1872,7 @@ LET start() = VALOF
     // try/catch, and silently returned DEFAULT — so workspace state
     // never survived a reload.
     files = loadFiles();
+    let activeLang = wsLang();		/* bcpl | c | b | bw — the active language */
 
     function loadFiles() {
       try {
@@ -1884,6 +1920,39 @@ LET start() = VALOF
       }
     }
 
+    // ---------- Language switcher actions ----------
+    function renderLangSelect() {
+      const sel = document.getElementById("langSelect");
+      if (sel) sel.value = activeLang;
+    }
+
+    // Make a language active without the full editor re-sync (used after adding
+    // an example file, which does its own file-tab refresh).
+    function setActiveLang(lang) {
+      if (lang === activeLang) return;
+      activeLang = lang;
+      wsSetLang(lang);
+      renderLangSelect();
+      renderExampleList();
+      renderApiList();
+    }
+
+    // Switch the active language: re-scopes the Files (grouping), Examples and
+    // API tabs, the header indicator, and highlighting. Workspace is unchanged.
+    function switchLanguage(lang) {
+      if (lang === activeLang) return;
+      commitActiveEdit();
+      activeLang = lang;
+      wsSetLang(lang);
+      renderLangSelect();
+      renderFileList();
+      renderExampleList();
+      renderApiList();
+      refreshLangUI();
+      syncEditor();
+      invalidateLastBuilt();
+    }
+
     async function saveCurrentWorkspace() {
       commitActiveEdit();
       persistFiles();
@@ -1901,6 +1970,11 @@ LET start() = VALOF
       rebuildSourceTabs(false);
       renderAssetList();
       renderWsSelect();
+      activeLang = wsLang();		// each workspace remembers its own language
+      renderLangSelect();
+      renderExampleList();
+      renderApiList();
+      refreshLangUI();
       // Workspaces have independent sources; last build is stale.
       invalidateLastBuilt();
     }
@@ -2021,23 +2095,35 @@ LET start() = VALOF
       const i = activeFileIdx();
       if (i >= 0) files[i].content = userSrcEl.value;
     }
+    // Which language group a file belongs in. Compilable files go to their own
+    // language; .h headers list under both BCPL and C; anything else under BCPL.
+    function fileInGroup(f, key) {
+      if (isCompilable(f.name)) return langOf(f.name) === key;
+      if (f.name.endsWith(".h")) return key === "bcpl" || key === "c";
+      return key === "bcpl";
+    }
+    const FILE_GROUPS = [
+      { key: "bcpl", label: "BCPL" },
+      { key: "c",    label: "C" },
+      { key: "b",    label: "B · 1972" },
+      { key: "bw",   label: "B · Waterloo" },
+    ];
+
+    // Files pane grouped by language. The active language's group is expanded;
+    // other non-empty groups show a header only — clicking it switches language.
     function renderFileList() {
       fileListEl.innerHTML = "";
       const activeFile = activeFileIdx();
-      files.forEach((f, i) => {
+      const rowFor = (i) => {
+        const f = files[i];
         const li = document.createElement("li");
         if (i === activeFile) li.classList.add("active");
-        // Leading star — click to make this file the compile entry.
-        // Compilable files (.b BCPL, .c C) can be entry; .h rows get a
-        // placeholder (hidden, but reserves the column so names line up).
         const star = document.createElement("button");
-        const isSrc = isCompilable(f.name);
-        if (isSrc) {
+        if (isCompilable(f.name)) {
           star.className = "entry-star" + (f.entry ? " on" : "");
           star.textContent = f.entry ? "★" : "☆";
-          star.title = f.entry
-            ? `${f.name} is the compile entry`
-            : `make ${f.name} the compile entry`;
+          star.title = f.entry ? `${f.name} is the compile entry`
+                               : `make ${f.name} the compile entry`;
           star.onclick = (e) => { e.stopPropagation(); setEntryByIdx(i); };
         } else {
           star.className = "entry-star placeholder";
@@ -2051,12 +2137,24 @@ LET start() = VALOF
         name.onclick = () => openFileTab(i);
         li.appendChild(name);
         const del = document.createElement("button");
-        del.textContent = "×";
-        del.title = "delete";
+        del.textContent = "×"; del.title = "delete";
         del.onclick = (e) => { e.stopPropagation(); deleteFile(i); };
         li.appendChild(del);
-        fileListEl.appendChild(li);
-      });
+        return li;
+      };
+      for (const g of FILE_GROUPS) {
+        const idxs = [];
+        files.forEach((f, i) => { if (fileInGroup(f, g.key)) idxs.push(i); });
+        if (idxs.length === 0) continue;
+        const open = g.key === activeLang;
+        const hdr = document.createElement("li");
+        hdr.className = "lang-group" + (open ? " open" : "");
+        hdr.textContent = `${open ? "▾" : "▸"} ${g.label}  (${idxs.length})`;
+        hdr.title = open ? `${g.label} — active` : `switch to ${g.label}`;
+        if (!open) hdr.onclick = () => switchLanguage(g.key);
+        fileListEl.appendChild(hdr);
+        if (open) idxs.forEach((i) => fileListEl.appendChild(rowFor(i)));
+      }
       renderEntryBadge();
     }
 
@@ -2066,18 +2164,15 @@ LET start() = VALOF
     // hunting through the file pane.
     function renderEntryBadge() {
       if (!entryBadgeEl) return;
-      const entry = files.find(f => f.entry);
+      // Reflect the entry for the ACTIVE language.
+      const entry = entryFile();
       if (entry) {
         entryBadgeEl.innerHTML =
           `<span class="entry-badge-key">entry:</span> ` +
-          `<span class="entry-badge-name">${escapeHtml(entry.name)}</span>`;
+          `<span class="entry-badge-name${entry.entry ? "" : " entry-badge-implicit"}">` +
+          `${escapeHtml(entry.name)}${entry.entry ? "" : " (default)"}</span>`;
       } else {
-        const firstB = files.find(f => f.name.endsWith(".b"));
-        entryBadgeEl.innerHTML = firstB
-          ? `<span class="entry-badge-key">entry:</span> ` +
-            `<span class="entry-badge-name entry-badge-implicit">` +
-            `${escapeHtml(firstB.name)} (default)</span>`
-          : `<span class="entry-badge-key">no .b file</span>`;
+        entryBadgeEl.innerHTML = `<span class="entry-badge-key">no ${activeLang} file</span>`;
       }
     }
     async function addFile() {
@@ -2143,9 +2238,20 @@ LET start() = VALOF
       if (i < 0 || i >= files.length) return;
       const cur = files[i];
       if (!isCompilable(cur.name)) return;
-      if (cur.entry) return;
+      const curLang = langOf(cur.name);
       commitActiveEdit();
-      for (const f of files) f.entry = (f === cur);
+      // Entry is per-language: clear it only on files of the same language.
+      for (const f of files)
+        if (langOf(f.name) === curLang) f.entry = (f === cur);
+      // Starring a file also makes its language active (keeps the indicator in
+      // sync without touching the dropdown).
+      if (activeLang !== curLang) {
+        activeLang = curLang;
+        wsSetLang(activeLang);
+        renderLangSelect();
+        renderExampleList();
+        renderApiList();
+      }
       persistFiles();
       invalidateLastBuilt();
       renderSourceTabs();
@@ -2215,6 +2321,9 @@ LET start() = VALOF
     document.getElementById("wsSelect").addEventListener("change", (e) => {
       switchWorkspace(e.target.value);
     });
+    document.getElementById("langSelect").addEventListener("change", (e) => {
+      switchLanguage(e.target.value);
+    });
     document.getElementById("wsNew").addEventListener("click", async () => {
       const name = prompt("New workspace name:");
       if (name) await wsCreate(name);
@@ -2237,6 +2346,7 @@ LET start() = VALOF
       e.target.value = "";
     });
     renderWsSelect();
+    renderLangSelect();
 
     // ------------------ Examples tab (tutorial track) ------------------
     let selectedExample = TRACK[0]?.slug ?? EXTRAS[0];
@@ -2320,116 +2430,65 @@ LET start() = VALOF
       if (n) openExamplePreview(n);
     }
 
+    function exHeader(text) {
+      const hdr = document.createElement("li");
+      hdr.style.pointerEvents = "none";
+      hdr.style.color = "var(--fg-dim)";
+      hdr.style.marginTop = "0.5rem";
+      hdr.style.fontSize = "0.72rem";
+      hdr.style.textTransform = "uppercase";
+      hdr.style.letterSpacing = "0.05em";
+      hdr.textContent = text;
+      return hdr;
+    }
+
+    // Examples are scoped to the active language: BCPL shows the tutorial track
+    // + extras; the compiler languages show their own example set (each "+" adds
+    // a real file of that language to the workspace).
     function renderExampleList() {
       exampleListEl.innerHTML = "";
 
-      // "Start tutorial" button jumps to the first lesson.
-      const start = document.createElement("li");
-      start.innerHTML = "<span style='color: var(--accent);'>▶ Start tutorial</span>";
-      start.style.fontStyle = "italic";
-      start.onclick = () => openExamplePreview(TRACK[0].slug);
-      exampleListEl.appendChild(start);
-
-      // Group track entries by level.
-      for (const lv of LEVELS) {
-        const lessons = TRACK.filter(e => e.level === lv.n);
-        if (!lessons.length) continue;
-        const hdr = document.createElement("li");
-        hdr.style.pointerEvents = "none";
-        hdr.style.color = "var(--fg-dim)";
-        hdr.style.marginTop = "0.4rem";
-        hdr.style.fontSize = "0.72rem";
-        hdr.style.textTransform = "uppercase";
-        hdr.style.letterSpacing = "0.05em";
-        hdr.textContent = `Level ${lv.n} — ${lv.name}`;
-        exampleListEl.appendChild(hdr);
-        for (const e of lessons) {
-          exampleListEl.appendChild(makeExampleLi(e.slug, e.title, e.summary));
+      if (activeLang === "bcpl") {
+        const start = document.createElement("li");
+        start.innerHTML = "<span style='color: var(--accent);'>▶ Start tutorial</span>";
+        start.style.fontStyle = "italic";
+        start.onclick = () => openExamplePreview(TRACK[0].slug);
+        exampleListEl.appendChild(start);
+        for (const lv of LEVELS) {
+          const lessons = TRACK.filter(e => e.level === lv.n);
+          if (!lessons.length) continue;
+          exampleListEl.appendChild(exHeader(`Level ${lv.n} — ${lv.name}`));
+          for (const e of lessons)
+            exampleListEl.appendChild(makeExampleLi(e.slug, e.title, e.summary));
         }
+        if (EXTRAS.length) {
+          exampleListEl.appendChild(exHeader("Extras"));
+          for (const name of EXTRAS)
+            exampleListEl.appendChild(makeExampleLi(name, name, ""));
+        }
+        return;
       }
 
-      // Extras section (non-track demos).
-      if (EXTRAS.length) {
-        const hdr = document.createElement("li");
-        hdr.style.pointerEvents = "none";
-        hdr.style.color = "var(--fg-dim)";
-        hdr.style.marginTop = "0.6rem";
-        hdr.style.fontSize = "0.72rem";
-        hdr.style.textTransform = "uppercase";
-        hdr.style.letterSpacing = "0.05em";
-        hdr.textContent = "Extras";
-        exampleListEl.appendChild(hdr);
-        for (const name of EXTRAS) {
-          exampleListEl.appendChild(makeExampleLi(name, name, ""));
-        }
-      }
-
-      // C examples (museum) — each adds a real .c file to the workspace.
-      {
-        const hdr = document.createElement("li");
-        hdr.style.pointerEvents = "none";
-        hdr.style.color = "var(--fg-dim)";
-        hdr.style.marginTop = "0.6rem";
-        hdr.style.fontSize = "0.72rem";
-        hdr.style.textTransform = "uppercase";
-        hdr.style.letterSpacing = "0.05em";
-        hdr.textContent = "C · 1972";
-        exampleListEl.appendChild(hdr);
-        for (const e of C_EXAMPLES) {
-          const li = document.createElement("li");
-          const nm = document.createElement("span");
-          nm.className = "name"; nm.style.flex = "1";
-          nm.textContent = e.name + (e.dialect ? `  · ${e.dialect}` : "");
-          if (e.dialect) nm.title = `needs the ${e.dialect} dialect`;
-          li.appendChild(nm);
-          const add = document.createElement("button");
-          add.textContent = "+"; add.title = "add as a .c file"; add.className = "example-add";
-          add.onclick = (ev) => { ev.stopPropagation(); addCExampleAsFile(e.name); };
-          li.appendChild(add);
-          exampleListEl.appendChild(li);
-        }
-
-        const bhdr = document.createElement("div");
-        bhdr.style.color = "var(--fg-dim)";
-        bhdr.style.marginTop = "0.6rem";
-        bhdr.style.fontSize = "0.72rem";
-        bhdr.style.textTransform = "uppercase";
-        bhdr.style.letterSpacing = "0.05em";
-        bhdr.textContent = "B · 1972";
-        exampleListEl.appendChild(bhdr);
-        for (const e of B_EXAMPLES) {
-          const li = document.createElement("li");
-          const nm = document.createElement("span");
-          nm.className = "name"; nm.style.flex = "1";
-          nm.textContent = e.name;
-          li.appendChild(nm);
-          const add = document.createElement("button");
-          add.textContent = "+"; add.title = "add as a .b72 file"; add.className = "example-add";
-          add.onclick = (ev) => { ev.stopPropagation(); addBExampleAsFile(e.name); };
-          li.appendChild(add);
-          exampleListEl.appendChild(li);
-        }
-
-        const bwhdr = document.createElement("div");
-        bwhdr.style.color = "var(--fg-dim)";
-        bwhdr.style.marginTop = "0.6rem";
-        bwhdr.style.fontSize = "0.72rem";
-        bwhdr.style.textTransform = "uppercase";
-        bwhdr.style.letterSpacing = "0.05em";
-        bwhdr.textContent = "B · Waterloo 1978";
-        exampleListEl.appendChild(bwhdr);
-        for (const e of BW_EXAMPLES) {
-          const li = document.createElement("li");
-          const nm = document.createElement("span");
-          nm.className = "name"; nm.style.flex = "1";
-          nm.textContent = e.name;
-          li.appendChild(nm);
-          const add = document.createElement("button");
-          add.textContent = "+"; add.title = "add as a .b78 file"; add.className = "example-add";
-          add.onclick = (ev) => { ev.stopPropagation(); addBWExampleAsFile(e.name); };
-          li.appendChild(add);
-          exampleListEl.appendChild(li);
-        }
+      const SECTIONS = {
+        c:  { title: "C · 1972",          data: C_EXAMPLES,  ext: ".c",   add: addCExampleAsFile, dialect: true },
+        b:  { title: "B · 1972",          data: B_EXAMPLES,  ext: ".b72", add: addBExampleAsFile },
+        bw: { title: "B · Waterloo 1978", data: BW_EXAMPLES, ext: ".b78", add: addBWExampleAsFile },
+      };
+      const sec = SECTIONS[activeLang];
+      if (!sec) return;
+      exampleListEl.appendChild(exHeader(sec.title));
+      for (const e of sec.data) {
+        const li = document.createElement("li");
+        const nm = document.createElement("span");
+        nm.className = "name"; nm.style.flex = "1";
+        nm.textContent = e.name + (sec.dialect && e.dialect ? `  · ${e.dialect}` : "");
+        if (sec.dialect && e.dialect) nm.title = `needs the ${e.dialect} dialect`;
+        li.appendChild(nm);
+        const add = document.createElement("button");
+        add.textContent = "+"; add.title = `add as a ${sec.ext} file`; add.className = "example-add";
+        add.onclick = (ev) => { ev.stopPropagation(); sec.add(e.name); };
+        li.appendChild(add);
+        exampleListEl.appendChild(li);
       }
     }
 
@@ -2466,6 +2525,34 @@ LET start() = VALOF
 
     function renderApiList(filter = "") {
       apiListEl.innerHTML = "";
+      // Compiler languages: a small library reference from their lang module.
+      if (activeLang !== "bcpl") {
+        const api = activeLang === "c" ? C_API : activeLang === "b" ? B_API : BW_API;
+        const f = filter.toLowerCase();
+        const hdr = document.createElement("li");
+        hdr.className = "cat-header";
+        hdr.innerHTML = `<span class="cat-arrow">▾</span>` +
+          `<span class="cat-name">library</span>` +
+          `<span class="cat-count">${api.length}</span>`;
+        apiListEl.appendChild(hdr);
+        for (const d of api) {
+          if (f && !d.name.toLowerCase().includes(f)) continue;
+          const li = document.createElement("li");
+          li.className = "api-item";
+          const lbl = document.createElement("span");
+          lbl.textContent = d.name;
+          li.appendChild(lbl);
+          li.onclick = () => {
+            apiListEl.querySelectorAll("li").forEach(x => x.classList.remove("active"));
+            li.classList.add("active");
+            apiDetailEl.innerHTML =
+              `<div class="sig">${escapeHtml(d.sig)}</div>` +
+              `<div class="desc">${escapeHtml(d.desc)}</div>`;
+          };
+          apiListEl.appendChild(li);
+        }
+        return;
+      }
       const seen = new Set();
       const allNames = [
         ...slots.map(s => s.name).filter(n => n !== "stop_fn"),
@@ -3017,8 +3104,7 @@ LET start() = VALOF
     // dialect select shows only for C; the (BCPL-specific) debugger hides for any
     // greenfield language (C, B). Called whenever the entry changes.
     function refreshLangUI() {
-      const e = entryFile();
-      const lang = e ? langOf(e.name) : "bcpl";
+      const lang = activeLang;
       const native = lang !== "bcpl";
       document.getElementById("cDialect").style.display = lang === "c" ? "" : "none";
       document.getElementById("dbgMode").style.display  = native ? "none" : "";
@@ -3058,13 +3144,14 @@ LET start() = VALOF
       const fname = exName.split(/[ (]/)[0] + ".c";   // "upper (reads stdin)" -> "upper.c"
       let idx = files.findIndex((f) => f.name === fname);
       if (idx < 0) {
-        files.push({ name: fname, entry: !files.some((f) => f.entry), content: e.source });
+        files.push({ name: fname, entry: !files.some((f) => f.entry && langOf(f.name) === "c"), content: e.source });
         idx = files.length - 1;
       } else {
         files[idx].content = e.source;
       }
       if (e.dialect) document.getElementById("cDialect").value = e.dialect;
       if (e.stdin) stdinEl.value = e.stdin;
+      setActiveLang("c");
       persistFiles();
       rebuildSourceTabs(false);
       openFileTab(idx);
@@ -3079,12 +3166,13 @@ LET start() = VALOF
       const fname = exName.split(/[ (]/)[0] + ".b72";
       let idx = files.findIndex((f) => f.name === fname);
       if (idx < 0) {
-        files.push({ name: fname, entry: !files.some((f) => f.entry), content: e.source });
+        files.push({ name: fname, entry: !files.some((f) => f.entry && langOf(f.name) === "b"), content: e.source });
         idx = files.length - 1;
       } else {
         files[idx].content = e.source;
       }
       if (e.stdin) stdinEl.value = e.stdin;
+      setActiveLang("b");
       persistFiles();
       rebuildSourceTabs(false);
       openFileTab(idx);
@@ -3099,12 +3187,13 @@ LET start() = VALOF
       const fname = exName.split(/[ (]/)[0] + ".b78";
       let idx = files.findIndex((f) => f.name === fname);
       if (idx < 0) {
-        files.push({ name: fname, entry: !files.some((f) => f.entry), content: e.source });
+        files.push({ name: fname, entry: !files.some((f) => f.entry && langOf(f.name) === "bw"), content: e.source });
         idx = files.length - 1;
       } else {
         files[idx].content = e.source;
       }
       if (e.stdin) stdinEl.value = e.stdin;
+      setActiveLang("bw");
       persistFiles();
       rebuildSourceTabs(false);
       openFileTab(idx);
@@ -3569,6 +3658,91 @@ LET start() = VALOF
       }
       return out.join("");
     }
+
+    // Keyword sets for the C-like dialects (lowercase, unlike BCPL).
+    const C_KW = new Set("int char if else while for do switch case default return struct typedef sizeof break continue goto union enum long short unsigned signed float double void static extern auto register".split(" "));
+    const B_KW = new Set("auto extrn goto return if else while switch case".split(" "));
+    const BW_KW = new Set("auto extrn goto return if else while for do repeat switch case default break next".split(" "));
+
+    // Generic C-like highlighter, shared by C / B / Waterloo B. `kwSet` is the
+    // dialect keyword set; `escChar` is the string/char escape character
+    // (C: backslash, B/Waterloo: '*'). Reuses the tok-* classes.
+    function highlightClike(src, kwSet, escChar) {
+      const out = [];
+      let i = 0, n = src.length;
+      const strlit = (q) => {            // scan a "..." or '...' literal from i
+        let j = i + 1;
+        while (j < n && src[j] !== q && src[j] !== "\n") {
+          if (src[j] === escChar && j + 1 < n) j += 2; else j++;
+        }
+        if (j < n && src[j] === q) j++;
+        out.push(`<span class="tok-str">${escHtml(src.slice(i, j))}</span>`);
+        i = j;
+      };
+      while (i < n) {
+        const c = src[i];
+        if (c === "/" && src[i+1] === "/") {           // line comment
+          let j = src.indexOf("\n", i); if (j < 0) j = n;
+          out.push(`<span class="tok-com">${escHtml(src.slice(i, j))}</span>`);
+          i = j; continue;
+        }
+        if (c === "/" && src[i+1] === "*") {           // block comment
+          let j = src.indexOf("*/", i + 2); j = j < 0 ? n : j + 2;
+          out.push(`<span class="tok-com">${escHtml(src.slice(i, j))}</span>`);
+          i = j; continue;
+        }
+        if (c === '"') { strlit('"'); continue; }
+        if (c === "'") { strlit("'"); continue; }
+        // numbers: C hex, float, octal, decimal
+        if (/[0-9]/.test(c)) {
+          const m = src.slice(i).match(/^0[xX][0-9a-fA-F]+|^[0-9]+\.[0-9]+([eE][+-]?[0-9]+)?|^[0-9]+/);
+          const t = m ? m[0] : c;
+          out.push(`<span class="tok-num">${escHtml(t)}</span>`);
+          i += t.length; continue;
+        }
+        if (/[a-zA-Z_]/.test(c)) {                     // identifier / keyword
+          let j = i;
+          while (j < n && /[a-zA-Z0-9_]/.test(src[j])) j++;
+          const tok = src.slice(i, j);
+          out.push(kwSet.has(tok) ? `<span class="tok-kw">${escHtml(tok)}</span>` : escHtml(tok));
+          i = j; continue;
+        }
+        // Waterloo float operators: #+ #- #* #/ #< #> #<= #>= #== #!=
+        if (c === "#" && "+-*/<>=!".indexOf(src[i+1] ?? "") >= 0) {
+          let len = (src[i+2] === "=") ? 3 : 2;
+          out.push(`<span class="tok-op">${escHtml(src.slice(i, i+len))}</span>`);
+          i += len; continue;
+        }
+        if (i + 1 < n) {                               // two-char operators
+          const two = src.slice(i, i+2);
+          if (two === "==" || two === "!=" || two === "&&" || two === "||" ||
+              two === "<=" || two === ">=" || two === "<<" || two === ">>" ||
+              two === "->" || two === "++" || two === "--" ||
+              two === "+=" || two === "-=" || two === "*=" || two === "/=" ||
+              two === "%=" || two === "&=" || two === "|=" || two === "^=") {
+            out.push(`<span class="tok-op">${escHtml(two)}</span>`);
+            i += 2; continue;
+          }
+        }
+        if ("+-*/=<>!&|~%^".indexOf(c) >= 0) {          // single-char operators
+          out.push(`<span class="tok-op">${escHtml(c)}</span>`);
+          i++; continue;
+        }
+        out.push(escHtml(c));
+        i++;
+      }
+      return out.join("");
+    }
+
+    // Pick the highlighter for a file by its extension.
+    function highlightFor(name, src) {
+      switch (langOf(name)) {
+        case "c":  return highlightClike(src, C_KW, "\\");
+        case "b":  return highlightClike(src, B_KW, "*");
+        case "bw": return highlightClike(src, BW_KW, "*");
+        default:   return highlightBCPL(src);
+      }
+    }
     // Compile-error overlays. Keyed by filename (basename). Each value
     // is an array of { line, msg, fnName? }. setCompileErrors() updates
     // the map then re-syncs the editor so gutter dots + err-bands
@@ -3992,7 +4166,7 @@ LET start() = VALOF
       }
       editorGutterEl.innerHTML = parts.join("");
 
-      editorHlEl.innerHTML = highlightBCPL(src) + "\n";
+      editorHlEl.innerHTML = highlightFor(name, src) + "\n";
 
       // Error-line bands. Position each band at top = (line-1) * lineH
       // + paddingTop, height = lineH. Reads computed line-height to

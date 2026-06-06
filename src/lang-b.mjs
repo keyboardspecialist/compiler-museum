@@ -29,6 +29,12 @@ export async function compileB(source) {
 	return { wat: out.join("\n"), diagnostics: err.join("\n") };
 }
 
+// Library reference shown in the API tab when B (1972) is active.
+export const B_API = [
+	{ name: "getchar", sig: "getchar()", desc: "Read one byte from stdin; returns 0 at end of input." },
+	{ name: "putchar", sig: "putchar(c)", desc: "Write the low byte of c to output; returns c." },
+];
+
 // B example programs. B is typeless and pre-K&R: '*n' is the newline escape,
 // '=+' is add-assign, switch falls through (no break), vectors are declared
 // with a bare size (`auto v 5`) and indexed word-granularly. putchar/getchar
