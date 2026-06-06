@@ -105,6 +105,16 @@ try {
 	await clearAndRun();
 	await waitOut("YY");
 	ok(true, "Waterloo f32 #-operators -> YY");
+	await addCExample("puts");
+	await starFile("puts.b78");
+	await clearAndRun();
+	await waitOut("hello, museum");
+	ok(true, "Waterloo string library: putstr -> hello, museum");
+	await addCExample("upcase");
+	await starFile("upcase.b78");
+	await clearAndRun();
+	await waitOut("HELLO, WATERLOO");
+	ok(true, "Waterloo string library: getstr/char/lchar -> HELLO, WATERLOO");
 } catch (e) { ok(false, "Waterloo B: " + e.message + " | out=" + JSON.stringify(await outText())); }
 
 // 4. Switch entry back to BCPL; debug returns; main.b intact

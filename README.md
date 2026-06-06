@@ -35,7 +35,7 @@ Tracked (museum-owned):
 src/index.html      forked BCPL IDE shell + the C and B integration
 src/lang-c.mjs      C language module: compile (cfront-wasm -> WAT), CRuntime, examples
 src/lang-b.mjs      B (1972) module: compile (cfront-b -> WAT), examples (reuses CRuntime)
-src/lang-bw.mjs     Waterloo B (1978) module: compile (cfront-bw -> WAT), examples
+src/lang-bw.mjs     Waterloo B (1978) module: compile (cfront-bw -> WAT) + BWRuntime (string library: char/lchar/putstr/getstr) + examples
 compilers/build-c.sh emcc proto-c -> site/compilers/cfront-{prestruct,1120,b,bw}.{wasm,mjs}
 vendor/wabt.js      self-contained UMD WAT->wasm assembler (window.WabtModule)
 vendor/binaryen.mjs self-contained ESM (v129) for the asyncify pass
