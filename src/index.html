@@ -398,9 +398,37 @@
       align-items: baseline;
       gap: 1rem;
       flex-shrink: 0;
+      position: relative;            /* anchor the centered #langMode */
     }
-    header h1 { font-size: 1.1rem; margin: 0; }
+    header h1 { font-size: 1.1rem; margin: 0; white-space: nowrap; }
     header .sub { color: var(--fg-dim); font-size: 0.8rem; }
+
+    .hdr-left { display: flex; align-items: baseline; gap: 1rem; min-width: 0; }
+    /* Center column: active-language indicator, balanced between left + right. */
+    .lang-mode {
+      flex: 1;
+      align-self: center;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      font-size: 0.85rem;
+      white-space: nowrap;
+    }
+    .lang-mode .lm-lang {
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      color: var(--accent);
+    }
+    .lang-mode .lm-attrib { color: var(--fg-dim); font-size: 0.78rem; }
+    .lang-mode select {
+      background: var(--bg);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.1rem 0.3rem;
+      font-size: 0.78rem;
+    }
 
     .workspace {
       flex: 1;
@@ -1157,15 +1185,26 @@
 </head>
 <body>
   <header>
-    <h1>BCPL &rarr; WebAssembly</h1>
-    <span class="sub">
-      BCPL by
-      <a href="https://www.cl.cam.ac.uk/~mr10/" target="_blank" rel="noopener noreferrer">Martin Richards</a>.
-      &nbsp;
-      <a href="https://github.com/keyboardspecialist/bcplwasm" target="_blank" rel="noopener noreferrer">source on GitHub</a>
-      &nbsp;
-      <span id="buildTag" style="font-family: "Intel One Mono", ui-monospace, monospace;"></span>
-    </span>
+    <div class="hdr-left">
+      <h1>Compiler Museum</h1>
+      <span class="sub">
+        historic compilers &rarr; WebAssembly.
+        &nbsp;
+        <a href="https://github.com/keyboardspecialist/compiler-museum" target="_blank" rel="noopener noreferrer">source on GitHub</a>
+        &nbsp;
+        <span id="buildTag" style="font-family: "Intel One Mono", ui-monospace, monospace;"></span>
+      </span>
+    </div>
+
+    <!-- Center mode indicator: the active language/dialect the entry file selects. -->
+    <div id="langMode" class="lang-mode" title="active language — set by the entry file's extension">
+      <span id="lmLang" class="lm-lang">BCPL</span>
+      <select id="cDialect" title="C compiler dialect (the entry file is .c)" style="display:none">
+        <option value="1120">last1120 (1972)</option>
+        <option value="prestruct">prestruct (1973)</option>
+      </select>
+      <span id="lmAttrib" class="lm-attrib">Richards · 1967</span>
+    </div>
     <span class="ws-bar" id="wsBar" style="margin-left:auto;display:flex;align-items:center;gap:0.35rem;">
       <label class="sub" style="font-size:0.75rem;color:var(--fg-dim);">workspace:</label>
       <select id="wsSelect" title="active workspace"></select>
@@ -1181,10 +1220,6 @@
 
   <!-- Top command strip: build + run controls for the active workspace. -->
   <nav class="cmd-strip" id="cmdStrip">
-    <select id="cDialect" title="C compiler dialect (the entry file is .c)" style="display:none">
-      <option value="1120">C: last1120 (1972)</option>
-      <option value="prestruct">C: prestruct (1973)</option>
-    </select>
     <button id="compileRun"   class="primary" title="compile all + run">▶ Compile &amp; Run</button>
     <button id="compileOnly"  title="compile without running (re-uses bytes on next Run)">Compile</button>
     <button id="runOnly"      title="run the last compiled program (no recompile)" disabled>Run</button>
@@ -2893,6 +2928,12 @@ LET start() = VALOF
       document.getElementById("cDialect").style.display = c ? "" : "none";
       document.getElementById("dbgMode").style.display  = c ? "none" : "";
       if (c) { continueBtn.style.display = "none"; stepBtn.style.display = "none"; }
+      // Center mode indicator: language name + attribution (dialect select
+      // lives between them and only shows for C).
+      document.getElementById("lmLang").textContent   = c ? "C" : "BCPL";
+      document.getElementById("lmAttrib").textContent = c
+        ? "Ritchie · Bell Labs · 1972"
+        : "Richards · Cambridge · 1967";
     }
     document.getElementById("cDialect").addEventListener("change", () => {
       if (typeof invalidateLastBuilt === "function") invalidateLastBuilt();
