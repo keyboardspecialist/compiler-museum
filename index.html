@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
   <meta charset="utf-8">
-  <title>BCPL &rarr; WebAssembly playground</title>
+  <title>Compiler Museum</title>
   <!-- Apply stored theme preference BEFORE any CSS or content paints
        so users don't see a flash of dark mode while the main module
        script loads (it runs at end of body). Defaults to "light"; only
@@ -2082,7 +2082,14 @@ LET start() = VALOF
     }
     async function addFile() {
       commitActiveEdit();
-      const name = prompt("New file name (.b, .h, or .c):", "main.c");
+      const name = prompt(
+        "New file name. Extension picks the language:\n" +
+        "  .b   — BCPL\n" +
+        "  .c   — C (1972; last1120 / prestruct dialect)\n" +
+        "  .b72 — B (Thompson, 1972)\n" +
+        "  .b78 — Waterloo B (1978)\n" +
+        "  .h   — C/BCPL header (not a compile entry)",
+        "main.c");
       if (!name) return;
       if (files.some(f => f.name === name)) { alert(`"${name}" already exists`); return; }
       let content;
