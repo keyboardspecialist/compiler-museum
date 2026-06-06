@@ -421,6 +421,8 @@
       color: var(--accent);
     }
     .lang-mode .lm-attrib { color: var(--fg-dim); font-size: 0.78rem; }
+    .lang-mode .lm-attrib a { color: inherit; text-decoration: underline; }
+    .lang-mode .lm-attrib a:hover { color: var(--accent); }
     .lang-mode select {
       background: var(--bg);
       color: var(--fg);
@@ -2930,10 +2932,10 @@ LET start() = VALOF
       if (c) { continueBtn.style.display = "none"; stepBtn.style.display = "none"; }
       // Center mode indicator: language name + attribution (dialect select
       // lives between them and only shows for C).
-      document.getElementById("lmLang").textContent   = c ? "C" : "BCPL";
-      document.getElementById("lmAttrib").textContent = c
+      document.getElementById("lmLang").textContent  = c ? "C" : "BCPL";
+      document.getElementById("lmAttrib").innerHTML = c
         ? "Ritchie · Bell Labs · 1972"
-        : "Richards · Cambridge · 1967";
+        : '<a href="https://www.cl.cam.ac.uk/~mr10/" target="_blank" rel="noopener noreferrer">Richards</a> · Cambridge · 1967';
     }
     document.getElementById("cDialect").addEventListener("change", () => {
       if (typeof invalidateLastBuilt === "function") invalidateLastBuilt();
