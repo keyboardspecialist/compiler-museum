@@ -9,8 +9,14 @@ wt=$here/.gh-pages
 
 [ -d "$out" ] || { echo "deploy.sh: no site/ — run ./build.sh first" >&2; exit 1; }
 
-git -C "$here" worktree add -B gh-pages "$wt" 2>/dev/null \
-	|| git -C "$here" worktree add "$wt" gh-pages
+# Base the gh-pages worktree on the published branch so new deploys fast-forward
+# (don't reset gh-pages to main's HEAD, which diverges from the deploy history).
+git -C "$here" fetch -q origin gh-pages 2>/dev/null || true
+if git -C "$here" show-ref --verify --quiet refs/remotes/origin/gh-pages; then
+	git -C "$here" worktree add "$wt" -B gh-pages origin/gh-pages
+else
+	git -C "$here" worktree add --orphan -B gh-pages "$wt"
+fi
 
 rsync -a --delete --exclude .git "$out"/ "$wt"/
 touch "$wt/.nojekyll"
