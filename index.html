@@ -2513,7 +2513,9 @@ LET start() = VALOF
       }
 
       const SECTIONS = {
-        c:  { title: "C · 1972",          data: C_EXAMPLES,  ext: ".c",   add: addCExampleAsFile, dialect: true },
+        c:  { title: `C · ${cDialect()}`,
+              data: C_EXAMPLES.filter((e) => !e.dialect || e.dialect === cDialect()),
+              ext: ".c",   add: addCExampleAsFile, dialect: true },
         b:  { title: "B · 1972",          data: B_EXAMPLES,  ext: ".b72", add: addBExampleAsFile },
         bw: { title: "B · Waterloo 1978", data: BW_EXAMPLES, ext: ".b78", add: addBWExampleAsFile },
       };
@@ -3223,6 +3225,7 @@ LET start() = VALOF
     document.getElementById("cDialect").addEventListener("change", () => {
       if (typeof invalidateLastBuilt === "function") invalidateLastBuilt();
       refreshLangUI();   // update the origin tooltip for the chosen dialect
+      renderExampleList();   // dialect-specific C examples (bsem/struct) refilter
     });
 
     // Add a C example program as a real .c file in the workspace.
