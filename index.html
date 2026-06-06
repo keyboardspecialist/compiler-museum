@@ -2994,7 +2994,7 @@ LET start() = VALOF
     }
 
     async function doCompileBW(entry) {
-      const { wat, diagnostics } = await compileBW(entry.content);
+      const { wat, diagnostics } = await compileBW(entry.content, files);
       liveWatEl.textContent = wat || "(no WAT)";
       if (diagnostics) outputEl.textContent += diagnostics + "\n";
       if (!wat || !wat.includes("(func")) {
