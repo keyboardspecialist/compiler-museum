@@ -217,12 +217,33 @@ try {
 	ok(mainOK, "main.b present in expanded BCPL group");
 } catch (e) { ok(false, "back-to-BCPL: " + e.message); }
 
+// 4b. Non-BCPL example: clicking the NAME opens a read-only preview (not a
+//     new file); the source loads into the editor.
+try {
+	await selectLang("c");
+	await page.click('#leftTabs button[data-tab="examples"]');
+	await page.locator("#exampleList li", { hasText: "upper" }).last().locator(".name").click();
+	await page.waitForTimeout(300);
+	const ed = await page.locator("#userSrc").inputValue();
+	ok(/getchar/.test(ed), "C example name click opens a preview (source in editor)");
+} catch (e) { ok(false, "example preview: " + e.message); }
+
 // 5. Language choice persists across reload
 try {
 	await selectLang("c");
 	await page.goto(URL, { waitUntil: "networkidle" });
 	ok((await page.locator("#langSelect").inputValue()) === "c", "active language persists across reload");
 } catch (e) { ok(false, "persistence: " + e.message); }
+
+// 6. Hard link: #example=<file.ext> opens the museum example + switches language
+try {
+	await page.goto("about:blank");   // force a real navigation (hash-only goto won't reload)
+	await page.goto(URL + "#example=switch.b78", { waitUntil: "networkidle" });
+	await page.waitForTimeout(500);
+	const lang = await page.locator("#langSelect").inputValue();
+	const ed = await page.locator("#userSrc").inputValue();
+	ok(lang === "bw" && /kind/.test(ed), "#example=switch.b78 hard link loads the Waterloo example");
+} catch (e) { ok(false, "hard link: " + e.message); }
 
 if (errs.length) console.log("page errors:\n  " + errs.slice(0, 6).join("\n  "));
 await browser.close();

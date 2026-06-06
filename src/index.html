@@ -2372,6 +2372,36 @@ LET start() = VALOF
       if (src) openPreviewTab(slug, src);
     }
 
+    // Museum (C/B/Waterloo) examples live in the lang modules, not on disk. The
+    // preview "slug" IS the filename it would create (e.g. maxsub.c) so it
+    // highlights by extension and the #example=<file> hard link round-trips.
+    const MUSEUM_EX = {
+      ".c":   C_EXAMPLES, ".b72": B_EXAMPLES, ".b78": BW_EXAMPLES,
+    };
+    function museumExampleByFile(fname) {
+      const ext = fname.endsWith(".b72") ? ".b72" : fname.endsWith(".b78") ? ".b78"
+                : fname.endsWith(".c") ? ".c" : null;
+      const arr = ext && MUSEUM_EX[ext];
+      if (!arr) return null;
+      const base = fname.slice(0, -ext.length);
+      const e = arr.find((x) => x.name.split(/[ (]/)[0] === base);
+      return e ? { ext, ex: e } : null;
+    }
+    // Open a read-only preview of a museum example (click in the Examples list,
+    // or via a #example=<file> link). Mirrors openExamplePreview for BCPL.
+    function openMuseumPreview(fname, ex) {
+      commitActiveEdit();
+      const lang = langOf(fname);
+      if (lang !== activeLang) {	// a #example link may arrive in another lang
+        activeLang = lang; wsSetLang(lang); renderLangSelect(); refreshLangUI();
+      }
+      selectedExample = fname;
+      if (ex && ex.dialect) document.getElementById("cDialect").value = ex.dialect;
+      if (ex && ex.stdin) stdinEl.value = ex.stdin;
+      renderExampleList(); renderApiList();
+      openPreviewTab(fname, ex.source);
+    }
+
     // Add an example as a real workspace file (skip the preview step).
     // If the file already exists, prompt before overwriting.
     async function addExampleAsFile(slug) {
@@ -2491,7 +2521,11 @@ LET start() = VALOF
       if (!sec) return;
       exampleListEl.appendChild(exHeader(sec.title));
       for (const e of sec.data) {
+        const fname = e.name.split(/[ (]/)[0] + sec.ext;   // preview/file name
         const li = document.createElement("li");
+        li.style.cursor = "pointer";
+        if (fname === selectedExample) li.classList.add("active");
+        li.onclick = () => openMuseumPreview(fname, e);     // click -> preview
         const nm = document.createElement("span");
         nm.className = "name"; nm.style.flex = "1";
         nm.textContent = e.name + (sec.dialect && e.dialect ? `  · ${e.dialect}` : "");
@@ -4555,7 +4589,11 @@ LET start() = VALOF
           return;
         }
       }
-      if (p.example) await openExamplePreview(p.example);
+      if (p.example) {
+        const m = museumExampleByFile(p.example);
+        if (m) openMuseumPreview(p.example, m.ex);
+        else await openExamplePreview(p.example);
+      }
     }
     // Check whether a workspace file's content matches the shipped
     // example bytes exactly. If so, the share link can use the compact
@@ -4571,19 +4609,24 @@ LET start() = VALOF
       return null;
     }
     async function buildShareUrl() {
-      // Preview tab: share the example slug.
+      // Preview tab: share the example as #example=<slug-or-file>.
       const t = sourceTabs[activeTab];
-      if (t?.kind === "preview" && BY_SLUG.has(t.name)) {
+      if (t?.kind === "preview" && (BY_SLUG.has(t.name) || museumExampleByFile(t.name))) {
         return `${location.origin}${location.pathname}#example=${encodeURIComponent(t.name)}`;
       }
-      // Active editable file that's a pristine copy of a shipped
-      // example: same compact #example= URL, no b64 payload needed.
+      // Active editable file that's a pristine copy of a shipped example
+      // (BCPL .b on disk, or a C/B/Waterloo example in a lang module): same
+      // compact #example= URL, no b64 payload needed.
       if (t?.kind === "file") {
         const f = files[t.fileIdx];
         if (f) {
           const slug = await fileMatchesShippedExample(f);
           if (slug) {
             return `${location.origin}${location.pathname}#example=${encodeURIComponent(slug)}`;
+          }
+          const m = museumExampleByFile(f.name);
+          if (m && m.ex.source === f.content) {
+            return `${location.origin}${location.pathname}#example=${encodeURIComponent(f.name)}`;
           }
         }
       }
