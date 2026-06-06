@@ -2936,9 +2936,16 @@ LET start() = VALOF
       document.getElementById("lmAttrib").innerHTML = c
         ? '<a href="https://www.bell-labs.com/usr/dmr/www/" target="_blank" rel="noopener noreferrer">Ritchie</a> · Bell Labs · 1972'
         : '<a href="https://www.cl.cam.ac.uk/~mr10/" target="_blank" rel="noopener noreferrer">Richards</a> · Cambridge · 1967';
+      // Origin of the specific compiler now active (C distinguishes dialects).
+      document.getElementById("langMode").title = !c
+        ? "BCPL — Martin Richards' Cintcode BCPL (Cambridge, from 1967), compiled here to WebAssembly."
+        : cDialect() === "prestruct"
+          ? "prestruct-c — Ritchie's 1972–73 C, just before the struct rework: C-style array decay, early structs (Bell Labs)."
+          : "last1120c — Ritchie's earliest surviving C compiler (Bell Labs, 1972), pre-K&R: B-style reassignable array pointers, no structs.";
     }
     document.getElementById("cDialect").addEventListener("change", () => {
       if (typeof invalidateLastBuilt === "function") invalidateLastBuilt();
+      refreshLangUI();   // update the origin tooltip for the chosen dialect
     });
 
     // Add a C example program as a real .c file in the workspace.
