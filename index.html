@@ -1676,27 +1676,29 @@ LET start() = VALOF
         span.textContent = label;
         span.onclick = () => { activeTab = i; renderSourceTabs(); showActive(); };
         btn.appendChild(span);
-        // Close button only for preview tabs.
-        if (t.kind === "preview") {
-          const close = document.createElement("button");
-          close.className = "close";
-          close.textContent = "×";
-          close.title = "close preview";
-          close.onclick = (e) => {
-            e.stopPropagation();
-            sourceTabs.splice(i, 1);
-            if (activeTab >= sourceTabs.length) activeTab = sourceTabs.length - 1;
-            if (activeTab < 0) activeTab = 0;
-            renderSourceTabs(); showActive();
-          };
-          btn.appendChild(close);
-        }
+        // Close button on every tab. Closing a file tab only closes the tab —
+        // the file stays in the Files list. Previews and WAT/Wasm views vanish.
+        const close = document.createElement("button");
+        close.className = "close";
+        close.textContent = "×";
+        close.title = t.kind === "file" ? "close tab (file stays in Files)" : "close";
+        close.onclick = (e) => { e.stopPropagation(); closeTab(i); };
+        btn.appendChild(close);
         sourceTabsEl.appendChild(btn);
       });
     }
     function showActive() {
       const t = sourceTabs[activeTab];
-      if (!t) return;
+      if (!t) {					/* no tabs open: blank the editor */
+        setEditorContent("");
+        userSrcEl.readOnly = true;
+        editorWrapEl.style.display = "flex";
+        liveWatEl.style.display = "none";
+        wasmViewEl.style.display = "none";
+        previewNoteEl.classList.remove("visible");
+        renderFileList();
+        return;
+      }
       if (t.kind === "file") {
         const f = files[t.fileIdx];
         setEditorContent(f?.content ?? "");
@@ -1744,6 +1746,18 @@ LET start() = VALOF
         activeTab = at;
       }
       renderSourceTabs(); showActive();
+    }
+    // Close an open tab. A file tab closing only removes the editor tab — the
+    // file remains in the workspace/Files list. Previews and WAT/Wasm views are
+    // transient and simply discarded.
+    function closeTab(i) {
+      if (i < 0 || i >= sourceTabs.length) return;
+      if (i === activeTab) commitActiveEdit();	// persist edits before closing
+      sourceTabs.splice(i, 1);
+      if (activeTab > i) activeTab--;
+      else if (activeTab >= sourceTabs.length) activeTab = sourceTabs.length - 1;
+      if (activeTab < 0) activeTab = 0;
+      renderSourceTabs(); showActive(); renderFileList();
     }
     function openPreviewTab(name, content) {
       const existing = sourceTabs.findIndex(t =>
