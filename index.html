@@ -1376,6 +1376,7 @@
     // Museum: C language support (the two 1972 C compilers, built to wasm).
     import { compileC, makeCRuntime, C_EXAMPLES } from "./lang-c.mjs";
     import { compileB, B_EXAMPLES } from "./lang-b.mjs";
+    import { compileBW, BW_EXAMPLES } from "./lang-bw.mjs";
     const V = Date.now();
     // Build tag in header — derived from the page's last-modified
     // header (server-side mtime). If the browser served a cached
@@ -1472,9 +1473,11 @@
       !name ? "bcpl"
         : name.endsWith(".c")   ? "c"
         : name.endsWith(".b72") ? "b"      // B (1972); .b is BCPL, so B uses .b72
+        : name.endsWith(".b78") ? "bw"     // Waterloo B (1978)
         : "bcpl";
     const isCompilable = (name) =>
-      name.endsWith(".b") || name.endsWith(".c") || name.endsWith(".b72");
+      name.endsWith(".b") || name.endsWith(".c") ||
+      name.endsWith(".b72") || name.endsWith(".b78");
     function entryFile() {
       const src = files.filter((f) => isCompilable(f.name));
       return src.find((f) => f.entry) || src[0] || null;
@@ -2398,6 +2401,27 @@ LET start() = VALOF
           li.appendChild(add);
           exampleListEl.appendChild(li);
         }
+
+        const bwhdr = document.createElement("div");
+        bwhdr.style.color = "var(--fg-dim)";
+        bwhdr.style.marginTop = "0.6rem";
+        bwhdr.style.fontSize = "0.72rem";
+        bwhdr.style.textTransform = "uppercase";
+        bwhdr.style.letterSpacing = "0.05em";
+        bwhdr.textContent = "B · Waterloo 1978";
+        exampleListEl.appendChild(bwhdr);
+        for (const e of BW_EXAMPLES) {
+          const li = document.createElement("li");
+          const nm = document.createElement("span");
+          nm.className = "name"; nm.style.flex = "1";
+          nm.textContent = e.name;
+          li.appendChild(nm);
+          const add = document.createElement("button");
+          add.textContent = "+"; add.title = "add as a .b78 file"; add.className = "example-add";
+          add.onclick = (ev) => { ev.stopPropagation(); addBWExampleAsFile(e.name); };
+          li.appendChild(add);
+          exampleListEl.appendChild(li);
+        }
       }
     }
 
@@ -2966,6 +2990,19 @@ LET start() = VALOF
       return { libBufs: [], entryBufs: [bytes], modulesPerSource: [1] };
     }
 
+    async function doCompileBW(entry) {
+      const { wat, diagnostics } = await compileBW(entry.content);
+      liveWatEl.textContent = wat || "(no WAT)";
+      if (diagnostics) outputEl.textContent += diagnostics + "\n";
+      if (!wat || !wat.includes("(func")) {
+        setStatus("compile error", true);
+        return null;
+      }
+      const bytes = await assembleWat(wat, "bw.wat", false);
+      setStatus(diagnostics ? "compiled (warnings)" : "compiled");
+      return { libBufs: [], entryBufs: [bytes], modulesPerSource: [1] };
+    }
+
     // Reflect the active language in the header indicator and gate UI: the C
     // dialect select shows only for C; the (BCPL-specific) debugger hides for any
     // greenfield language (C, B). Called whenever the entry changes.
@@ -2989,6 +3026,10 @@ LET start() = VALOF
         lmLang.textContent = "B";
         lmAttrib.innerHTML = '<a href="https://www.nokia.com/bell-labs/about/dennis-m-ritchie/kbman.html" target="_blank" rel="noopener noreferrer">Thompson</a> · Bell Labs · 1972';
         langMode.title = "B — Ken Thompson's 1972 typeless ancestor of C (Bell Labs): a word machine with reassignable pointers and fall-through switch. Compiled here to WebAssembly.";
+      } else if (lang === "bw") {
+        lmLang.textContent = "B";
+        lmAttrib.innerHTML = '<a href="https://www.thinkage.ca/gcos/expl/b/manu/manu.html" target="_blank" rel="noopener noreferrer">Waterloo</a> · 1978';
+        langMode.title = "Waterloo B — the 1978 Honeywell 6000/66 dialect (Gurd, U. Waterloo): adds for/repeat, modern += / && / ||, switch ranges, and f32 #-operators over Thompson's B. Compiled here to WebAssembly.";
       } else {
         lmLang.textContent = "BCPL";
         lmAttrib.innerHTML = '<a href="https://www.cl.cam.ac.uk/~mr10/" target="_blank" rel="noopener noreferrer">Richards</a> · Cambridge · 1967';
@@ -3040,6 +3081,26 @@ LET start() = VALOF
       renderFileList();
       refreshLangUI();
     }
+
+    // Add a Waterloo B example program as a real .b78 file in the workspace.
+    function addBWExampleAsFile(exName) {
+      const e = BW_EXAMPLES.find((x) => x.name === exName);
+      if (!e) return;
+      const fname = exName.split(/[ (]/)[0] + ".b78";
+      let idx = files.findIndex((f) => f.name === fname);
+      if (idx < 0) {
+        files.push({ name: fname, entry: !files.some((f) => f.entry), content: e.source });
+        idx = files.length - 1;
+      } else {
+        files[idx].content = e.source;
+      }
+      if (e.stdin) stdinEl.value = e.stdin;
+      persistFiles();
+      rebuildSourceTabs(false);
+      openFileTab(idx);
+      renderFileList();
+      refreshLangUI();
+    }
     // ----------------------------------------------------
 
     async function doCompile() {
@@ -3061,6 +3122,7 @@ LET start() = VALOF
         const _entry = entryFile();         // language by entry-file extension
         if (_entry && langOf(_entry.name) === "c") return await doCompileC(_entry);
         if (_entry && langOf(_entry.name) === "b") return await doCompileB(_entry);
+        if (_entry && langOf(_entry.name) === "bw") return await doCompileBW(_entry);
       }
       const compileErrAcc = new Map();
       let built = null;
