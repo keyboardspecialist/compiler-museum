@@ -200,13 +200,13 @@ try {
 	await addExample("loops", "bw");
 	await starFile("loops.b78");
 	if (!(await dbgIsOn())) await page.click("#dbgMode");
-	await page.locator('#editorGutter .gut-line[data-line="9"]').click();
+	await page.locator('#editorGutter .gut-line[data-line="16"]').click();
 	await clearAndRun();
 	await waitPaused();
 	ok(true, "Waterloo B breakpoint pauses execution");
 	await page.click("#continueRun");
-	await waitOut("37");
-	ok(true, "Waterloo B continue runs to completion -> 37");
+	await waitOut("14");
+	ok(true, "Waterloo B continue runs to completion -> 14");
 	await page.click("#dbgMode");          // debug off
 } catch (e) { ok(false, "BW debug: " + e.message + " | status=" + (await page.locator("#compileStatus").textContent().catch(() => ""))); }
 
