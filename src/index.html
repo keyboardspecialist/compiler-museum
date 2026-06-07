@@ -1405,10 +1405,15 @@
   <script src="./vendor/wabt.js"></script>
   <script type="module">
     // Museum: C language support (the two 1972 C compilers, built to wasm).
-    import { compileC, makeCRuntime, C_EXAMPLES, C_API } from "./lang-c.mjs";
-    import { compileB, B_EXAMPLES, B_API } from "./lang-b.mjs";
-    import { compileBW, makeBWRuntime, BW_EXAMPLES, BW_API } from "./lang-bw.mjs";
+    // Language modules are imported dynamically with a cache-bust (below), so a
+    // redeploy's fresh lang-*.mjs + cfront-*.{mjs,wasm} aren't served stale.
+    let compileC, makeCRuntime, C_EXAMPLES, C_API;
+    let compileB, B_EXAMPLES, B_API;
+    let compileBW, makeBWRuntime, BW_EXAMPLES, BW_API;
     const V = Date.now();
+    ({ compileC, makeCRuntime, C_EXAMPLES, C_API } = await import(`./lang-c.mjs?v=${V}`));
+    ({ compileB, B_EXAMPLES, B_API }               = await import(`./lang-b.mjs?v=${V}`));
+    ({ compileBW, makeBWRuntime, BW_EXAMPLES, BW_API } = await import(`./lang-bw.mjs?v=${V}`));
     // Build tag in header — derived from the page's last-modified
     // header (server-side mtime). If the browser served a cached
     // response, the time shown reflects the CACHED page's mtime, so

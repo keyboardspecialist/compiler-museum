@@ -3,12 +3,12 @@
 // emitted WAT. Programs run under BWRuntime, which adds the B string library as
 // memory-aware wasm imports (char/lchar/putstr/getstr) on top of getchar/putchar.
 
-import { CRuntime, extractDbgMap } from "./lang-c.mjs";
+import { CRuntime, extractDbgMap, wasmOpts, V } from "./lang-c.mjs";
 
 let factory = null;
 async function bwFactory() {
 	if (!factory)
-		factory = (await import("./compilers/cfront-bw.mjs")).default;
+		factory = (await import(`./compilers/cfront-bw.mjs?v=${V}`)).default;
 	return factory;
 }
 
@@ -22,6 +22,7 @@ export async function compileBW(source, files, dbg = false) {
 		print: (s) => out.push(s),
 		printErr: (s) => err.push(s),
 		noInitialRun: true,
+		...wasmOpts,
 	});
 	M.FS.writeFile("/in.b", source);
 	if (Array.isArray(files))

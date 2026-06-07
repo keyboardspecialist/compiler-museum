@@ -4,12 +4,19 @@
 // matches the BcplRuntime (writeOut, input) contract so the IDE's doRun() sink
 // wiring is reused unchanged.
 
+// Cache-bust the compiler module + its wasm per session, so a redeploy's fresh
+// cfront-*.{mjs,wasm} aren't served stale from the browser cache.
+export const V = Date.now();
 const factories = {};
 async function factoryFor(dialect) {
 	if (!factories[dialect])
-		factories[dialect] = (await import(`./compilers/cfront-${dialect}.mjs`)).default;
+		factories[dialect] = (await import(`./compilers/cfront-${dialect}.mjs?v=${V}`)).default;
 	return factories[dialect];
 }
+// emscripten Module options that version the .wasm fetch. locateFile gets
+// (path, scriptDir); keep scriptDir (the /compilers/ prefix) and append a
+// cache-bust so a redeploy's fresh .wasm isn't served stale.
+export const wasmOpts = { locateFile: (p, d) => (/\.wasm$/.test(p) ? `${d}${p}?v=${V}` : `${d}${p}`) };
 
 // Strip the compiler's `;;#dbg {json}` lines (emitted under -g) out of the WAT
 // and parse them into a per-function frame-variable map for the debugger.
@@ -37,6 +44,7 @@ export async function compileC(source, dialect = "1120", dbg = false) {
 		print: (s) => out.push(s),
 		printErr: (s) => err.push(s),
 		noInitialRun: true,
+		...wasmOpts,
 	});
 	M.FS.writeFile("/in.c", source);
 	try {
