@@ -117,20 +117,41 @@ main() {
 	},
 	{
 		name: "loops",
-		source: `/* for + += + next(continue): sum 1..10 skipping multiples of 3 */
+		source: `/* Every Waterloo B loop form: while, for (+ next), do-while, repeat (+ break).
+   putn prints a non-negative number; prints 15 / 5 / 6 / 14. */
 putn(n) {
 	if (n > 9) putn(n / 10);
 	putchar(n - n / 10 * 10 + '0');
 }
 main() {
-	auto i, s;
-	s = 0;
+	auto i, s, c, k;
+
+	/* while: sum 1..5 = 15 */
+	s = 0; i = 1;
+	while (i <= 5) { s += i; i += 1; }
+	putn(s); putchar('*n');
+
+	/* for + next(continue): count odds in 1..10 = 5 */
+	c = 0;
 	for (i = 1; i <= 10; i += 1) {
-		if (i % 3 == 0) next;
-		s += i;
+		if (i % 2 == 0) next;
+		c += 1;
 	}
-	putn(s);            /* 1+2+4+5+7+8+10 = 37 */
-	putchar('*n');
+	putn(c); putchar('*n');
+
+	/* do-while: body runs once before the test; s = 1+2+3 = 6 */
+	s = 0; i = 0;
+	do { i += 1; s += i; } while (i < 3);
+	putn(s); putchar('*n');
+
+	/* repeat + break: first multiple of 7 above 10 = 14 */
+	k = 10;
+	repeat {
+		k += 1;
+		if (k % 7 == 0) break;
+	}
+	putn(k); putchar('*n');
+
 	return(0);
 }`,
 	},
