@@ -4,12 +4,12 @@
 // WAT. B reuses the C runtime (makeCRuntime) unchanged -- identical getchar/
 // putchar imports and memory export -- so the shell's doRunC() handles it.
 
-import { extractDbgMap } from "./lang-c.mjs";
+import { extractDbgMap, wasmOpts, V } from "./lang-c.mjs";
 
 let factory = null;
 async function bFactory() {
 	if (!factory)
-		factory = (await import("./compilers/cfront-b.mjs")).default;
+		factory = (await import(`./compilers/cfront-b.mjs?v=${V}`)).default;
 	return factory;
 }
 
@@ -21,6 +21,7 @@ export async function compileB(source, dbg = false) {
 		print: (s) => out.push(s),
 		printErr: (s) => err.push(s),
 		noInitialRun: true,
+		...wasmOpts,
 	});
 	M.FS.writeFile("/in.b", source);
 	try {
