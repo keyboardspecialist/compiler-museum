@@ -159,7 +159,7 @@ main() {
 		name: "grade",
 		source: `/* switch with RANGE cases + default (Waterloo): case lo :: hi : */
 grade(n) {
-	switch n {
+	switch (n) {
 	case 0 :: 59 :  return('F');
 	case 60 :: 69 : return('D');
 	case 70 :: 79 : return('C');
@@ -252,7 +252,7 @@ main() {
    S space, D digit, L letter, C control, H high-bit, P punctuation.
    Dispatch tries equality, then ranges, then bounds, then default. */
 kind(c) {
-	switch c {
+	switch (c) {
 	case ' ':         return('S');
 	case '0' :: '9':  return('D');
 	case 'a' :: 'z':                  /* falls through to ... */
