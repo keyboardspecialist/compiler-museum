@@ -2214,11 +2214,21 @@ LET start() = VALOF
         "main.c");
       if (!name) return;
       if (files.some(f => f.name === name)) { alert(`"${name}" already exists`); return; }
+      // Seed by language (not "everything else = BCPL", which dropped BCPL
+      // boilerplate into new .b72/.b78 B files).
       let content;
-      if (name.endsWith(".c"))      content = "main() {\n\treturn(0);\n}\n";
-      else if (name.endsWith(".b")) content = `SECTION "${name.replace(/\.b$/, "")}"\n\nGET "libhdr"\n\n`;
-      else                          content = "// BCPL header — declare globals here\n\nGLOBAL {\n}\n";
+      if (name.endsWith(".h"))                 content = "/* header — shared declarations */\n";
+      else if (langOf(name) === "c")           content = "main() {\n\treturn(0);\n}\n";
+      else if (langOf(name) === "b" ||
+               langOf(name) === "bw")          content = "main() {\n\treturn(0);\n}\n";
+      else /* bcpl */                          content = `SECTION "${name.replace(/\.[^.]*$/, "")}"\n\nGET "libhdr"\n\n`;
       files.push({ name, entry: false, content });
+      // Make the new file's language active so it shows in the (expanded) group.
+      if (isCompilable(name) && langOf(name) !== activeLang) {
+        activeLang = langOf(name);
+        wsSetLang(activeLang);
+        renderLangSelect(); renderExampleList(); renderApiList(); refreshLangUI();
+      }
       rebuildSourceTabs(false);
       openFileTab(files.length - 1);
       renderFileList();

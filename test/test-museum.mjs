@@ -263,6 +263,17 @@ try {
 	ok(tabGone && fileStays, "closing a file tab keeps the file in the Files list");
 } catch (e) { ok(false, "close tabs: " + e.message); }
 
+// 4d. New non-BCPL file gets language-appropriate boilerplate, not BCPL headers.
+try {
+	await page.click('#leftTabs button[data-tab="files"]');
+	page.once("dialog", (d) => d.accept("scratch.b72"));
+	await page.click("#addFile");
+	await page.waitForTimeout(250);
+	const ed = await page.locator("#userSrc").inputValue();
+	ok(/main\(\)/.test(ed) && !/SECTION|libhdr|GLOBAL/.test(ed),
+		"new .b72 file gets B boilerplate (not BCPL)");
+} catch (e) { ok(false, "new B file: " + e.message); }
+
 // 5. Language choice persists across reload
 try {
 	await selectLang("c");
