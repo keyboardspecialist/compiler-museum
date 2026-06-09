@@ -97,6 +97,30 @@ export class CRuntime {
 			getchar: () => (self._inPos < self._inEnc.length ? self._inEnc[self._inPos++] : 0),
 			putchar: (c) => { self.writeOut(String.fromCharCode(c & 0xff)); return c & 0xff; },
 			putn: (n) => { self.writeOut(String(n | 0)); return n | 0; },
+			// printf(fmt, argbuf, argc): the compiler marshals the variadic args
+			// into argbuf as 8-byte slots; walk the format pulling an i32 or f64
+			// per conversion. Pointers are byte addresses (unlike B's words).
+			printf: (fmt, argbuf, argc) => {
+				const dv = self._mem();
+				const rds = (a) => { a >>>= 0; let x = "", ch; while ((ch = dv.getUint8(a++))) x += String.fromCharCode(ch); return x; };
+				let a = fmt >>> 0, sl = argbuf >>> 0, out = "", ch;
+				const i32 = () => { const r = dv.getInt32(sl, true); sl += 8; return r; };
+				const f64 = () => { const r = dv.getFloat64(sl, true); sl += 8; return r; };
+				while ((ch = dv.getUint8(a++))) {
+					if (ch === 37 /* % */) {
+						const f = dv.getUint8(a++);
+						if (f === 100) out += String(i32() | 0);
+						else if (f === 99) out += String.fromCharCode(i32() & 0xff);
+						else if (f === 120) out += (i32() >>> 0).toString(16);
+						else if (f === 111) out += (i32() >>> 0).toString(8);
+						else if (f === 115) out += rds(i32());
+						else if (f === 102) out += f64().toFixed(6);
+						else if (f === 37) out += "%";
+						else out += "%" + String.fromCharCode(f);
+					} else out += String.fromCharCode(ch);
+				}
+				self.writeOut(out); return 0;
+			},
 			exit: (code) => { throw { __exit: code | 0 }; },
 			__break: (line, fp) => self._impBreak(line, fp),
 		};
@@ -252,6 +276,20 @@ main() {
 }`,
 	},
 	{
+		name: "printf",
+		source: `/* printf: the compiler marshals the variadic args into a buffer; the
+   host walks the format. %d decimal, %c char, %s string, %x hex. */
+main() {
+	auto i;
+	i = 0;
+	while (i < 5) {
+		printf("%d squared is %d (hex %x)\\n", i, i * i, i * i);
+		i = i + 1;
+	}
+	return(0);
+}`,
+	},
+	{
 		name: "maxsub",
 		source: `/* Maximum Subarray (Kadane). Build a sample, print the answer. */
 putn(n) {
@@ -364,6 +402,7 @@ main() {
 export const C_API = [
 	{ name: "getchar", sig: "getchar()", desc: "Read one byte from stdin; returns 0 at end of input." },
 	{ name: "putchar", sig: "putchar(c)", desc: "Write the low byte of c to output; returns c." },
+	{ name: "printf", sig: "printf(fmt, ...)", desc: "Formatted output: %d decimal, %c char, %s string, %x hex, %o octal, %f float (double dialects)." },
 ];
 
 export function cExamplesFor(dialect) {
