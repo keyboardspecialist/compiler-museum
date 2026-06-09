@@ -109,7 +109,7 @@ export class CRuntime {
 				while ((ch = dv.getUint8(a++))) {
 					if (ch === 37 /* % */) {
 						const f = dv.getUint8(a++);
-						if (f === 100) out += String(i32() | 0);
+						if (f === 100 || f === 105 /* d, i */) out += String(i32() | 0);
 						else if (f === 99) out += String.fromCharCode(i32() & 0xff);
 						else if (f === 120) out += (i32() >>> 0).toString(16);
 						else if (f === 111) out += (i32() >>> 0).toString(8);
