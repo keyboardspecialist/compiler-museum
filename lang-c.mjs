@@ -1,5 +1,5 @@
-// C language support for the museum IDE: the two modernized 1972 C compilers
-// (prestruct + last1120) built to wasm. compileC() drives the chosen dialect's
+// C language support for the museum IDE: the modernized early C compilers
+// (last1120 1972, prestruct 1973, Unix 6 1975) built to wasm. compileC() drives the chosen dialect's
 // compiler over a MEMFS source file and returns the emitted WAT; makeCRuntime()
 // matches the BcplRuntime (writeOut, input) contract so the IDE's doRun() sink
 // wiring is reused unchanged.
@@ -323,6 +323,37 @@ main() {
 	p.y = 7;
 	putn(p.x + p.y);    /* 12 */
 	putchar('\\n');
+	return(0);
+}`,
+	},
+	{
+		name: "for + #define (unix6)",
+		dialect: "unix6",
+		source: `/* 1975 (6th Ed. Unix): the for loop and the #define preprocessor arrive.
+   The =+ assignment operator is still the old, pre-K&R form. */
+# define N 10
+putn(n) { if (n > 9) putn(n / 10); putchar(n - n / 10 * 10 + '0'); }
+main() {
+	int i, s;
+	s = 0;
+	for (i = 1; i <= N; i++)
+		s =+ i;
+	putn(s);            /* 1+2+...+10 = 55 */
+	putchar('\\n');
+	return(0);
+}`,
+	},
+	{
+		name: "sizeof (unix6)",
+		dialect: "unix6",
+		source: `/* 1975: sizeof yields a compile-time byte count of a type or object. */
+putn(n) { if (n > 9) putn(n / 10); putchar(n - n / 10 * 10 + '0'); }
+struct pt ( int x; int y; );
+main() {
+	int v[10];
+	putn(sizeof(int));        putchar(' ');   /* 4  */
+	putn(sizeof(struct pt));  putchar(' ');   /* 8  */
+	putn(sizeof(v));          putchar('\\n'); /* 40 */
 	return(0);
 }`,
 	},

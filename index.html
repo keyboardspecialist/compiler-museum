@@ -1227,6 +1227,7 @@
       <select id="cDialect" title="C compiler dialect (the entry file is .c)" style="display:none">
         <option value="1120">last1120 (1972)</option>
         <option value="prestruct">prestruct (1973)</option>
+        <option value="unix6">Unix 6 (1975)</option>
       </select>
       <span id="lmAttrib" class="lm-attrib">Richards · 1967</span>
     </div>
@@ -2212,7 +2213,7 @@ LET start() = VALOF
       const name = prompt(
         "New file name. Extension picks the language:\n" +
         "  .b   — BCPL\n" +
-        "  .c   — C (1972; last1120 / prestruct dialect)\n" +
+        "  .c   — C (last1120 1972 / prestruct 1973 / Unix 6 1975 dialect)\n" +
         "  .b72 — B (Thompson, 1972)\n" +
         "  .b78 — Waterloo B (1978)\n" +
         "  .h   — C/BCPL header (not a compile entry)",
@@ -3233,9 +3234,12 @@ LET start() = VALOF
       const langMode = document.getElementById("langMode");
       if (lang === "c") {
         lmLang.textContent = "C";
-        lmAttrib.innerHTML = '<a href="https://www.bell-labs.com/usr/dmr/www/" target="_blank" rel="noopener noreferrer">Ritchie</a> · Bell Labs · 1972';
-        langMode.title = cDialect() === "prestruct"
+        const _cd = cDialect();
+        lmAttrib.innerHTML = '<a href="https://www.bell-labs.com/usr/dmr/www/" target="_blank" rel="noopener noreferrer">Ritchie</a> · Bell Labs · ' + (_cd === "unix6" ? "1975" : "1972");
+        langMode.title = _cd === "prestruct"
           ? "prestruct-c — Ritchie's 1972–73 C, just before the struct rework: C-style array decay, early structs (Bell Labs)."
+          : _cd === "unix6"
+          ? "Unix 6 C — the C of the Reference Manual shipped with 6th Edition Unix (1975): adds for, sizeof, and the #define/#include preprocessor over prestruct-c, keeping the archaic =+ operators and equals-less initializers."
           : "last1120c — Ritchie's earliest surviving C compiler (Bell Labs, 1972), pre-K&R: B-style reassignable array pointers, no structs.";
       } else if (lang === "b") {
         lmLang.textContent = "B";
