@@ -3136,10 +3136,24 @@ LET start() = VALOF
       return { libBufs: [], entryBufs: [bytes], modulesPerSource: [1], dbgMap };
     }
 
+    // Program output sink. Honors a destructive backspace (0x08) the way a
+    // terminal would -- the char before it is erased (but not back past a
+    // newline / start of output) -- so tricks like printf("x\by") that overprint
+    // render as the program intended instead of leaving a stray control char.
+    function writeProgramOut(s) {
+      if (s.indexOf("\b") < 0) { outputEl.textContent += s; return; }
+      let t = outputEl.textContent;
+      for (const ch of s) {
+        if (ch === "\b") { if (t.length && t[t.length - 1] !== "\n") t = t.slice(0, -1); }
+        else t += ch;
+      }
+      outputEl.textContent = t;
+    }
+
     async function doRunC(built) {
       // Waterloo B gets its string-library runtime; C and B(1972) share CRuntime.
       const mk = entryIsBW() ? makeBWRuntime : makeCRuntime;
-      const rt = mk((s) => { outputEl.textContent += s; }, stdinEl.value);
+      const rt = mk((s) => { writeProgramOut(s); }, stdinEl.value);
       rt.dbgMap = built.dbgMap || null;
       currentRt = rt; lastMemRt = rt;
       const entryName = (entryFile() || {}).name;
@@ -3429,7 +3443,7 @@ LET start() = VALOF
       if (entryIsNative()) return await doRunC(built);   // C/B entry: own runtime
       setStatus("loading…");
       const rt = new BcplRuntime(
-        (s) => { outputEl.textContent += s; },
+        (s) => { writeProgramOut(s); },
         stdinEl.value
       );
       currentRt = rt;
